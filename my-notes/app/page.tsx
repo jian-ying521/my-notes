@@ -4,14 +4,17 @@ import { useEffect, useState } from 'react';
 
 // ==========================================
 // [⚠️ 重要：環境切換說明]
-// 目前的預覽環境無法連接真實 Supabase，因此使用下方的 [模擬區塊]。
-// 當您在 VS Code (本地端) 執行時，請做以下動作：
-// 1. 確保已安裝套件: npm install @supabase/supabase-js
-// 2. [解除註解] 下方的「正式連線設定」
-// 3. [刪除或註解] 下方的「模擬 Supabase Client」
+// 因線上預覽環境無法安裝 Supabase 套件，目前預設為 [模擬模式]。
+//
+// === 當您複製回 VS Code (正式環境) 時，請執行以下步驟： ===
+// 1. 確保終端機已安裝: npm install @supabase/supabase-js
+// 2. [刪除] 下方的「模擬連線區塊」
+// 3. [解除註解] 下方的「正式連線區塊」
 // ==========================================
 
-/* // --- [正式連線設定] (複製回 VS Code 時請打開這個) ---
+
+// --- [1. 正式連線區塊] (複製回電腦後，請把這段解除註解) ---
+/*
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 
 const createClient = () => {
@@ -21,12 +24,14 @@ const createClient = () => {
 };
 */
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
-onst createClient = () => {
+
+const createClient = () => {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
   const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
   return createSupabaseClient(supabaseUrl, supabaseKey);
 };
-*/
+
+
 
 export default function RegistrationApp() {
   const [notes, setNotes] = useState<any[]>([]);
@@ -114,7 +119,7 @@ export default function RegistrationApp() {
       await supabase.from('login_history').insert([
         { real_name: name, action: action }
       ]);
-      console.log(`[模擬紀錄] ${name} ${action}`);
+      console.log(`[系統紀錄] ${name} ${action}`);
     } catch (e) {
       console.error('紀錄登入失敗', e);
     }
@@ -251,7 +256,7 @@ export default function RegistrationApp() {
             </button>
           </div>
           <p className="mt-4 text-xs text-center text-gray-400">
-            *預覽模式：使用模擬資料
+            *預覽模式：使用模擬資料庫
           </p>
         </div>
       ) : (
