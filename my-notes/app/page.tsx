@@ -8,15 +8,33 @@ export default function NotesApp() {
   const [newNote, setNewNote] = useState('');
   const [user, setUser] = useState<any>(null);
   
-  // 改用 username 來存輸入框的字
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   
   const supabase = createClient();
-
-  // 這是一個虛擬的網域，用來欺騙 Supabase 這是個 Email
   const FAKE_DOMAIN = "@my-notes.com";
+
+  // === 關鍵修改：轉碼工具 ===
+  // 把中文轉成亂碼 (例如：小明 -> 5bCP5piO)
+  const encodeName = (name: string) => {
+    try {
+      return btoa(encodeURIComponent(name)).replace(/=/g, '');
+    } catch {
+      return name;
+    }
+  };
+
+  // 把亂碼轉回中文 (例如：5bCP5piO -> 小明)
+  const decodeName = (email: string) => {
+    try {
+      const namePart = email.split('@')[0];
+      return decodeURIComponent(atob(namePart));
+    } catch {
+      return email ? email.split('@')[0] : '使用者';
+    }
+  };
+  // ========================
 
   useEffect(() => {
     const getUser = async () => {
@@ -44,16 +62,15 @@ export default function NotesApp() {
     }
   };
 
-  // 註冊：把 使用者名稱 + 虛擬網域 拼起來
   const handleSignUp = async () => {
     if (!username || !password) return alert("請輸入帳號密碼");
-    
     setLoading(true);
-    // 這裡動了手腳：把 'admin' 變成 'admin@my-notes.com'
-    const email = username + FAKE_DOMAIN; 
+    
+    // 這裡使用 encodeName 把中文轉成英文亂碼
+    const email = encodeName(username) + FAKE_DOMAIN; 
     
     const { error } = await supabase.auth.signUp({ email, password });
-    if (error) alert(error.message);
+    if (error) alert('註冊失敗：' + error.message);
     else {
       alert('註冊成功！系統已為您登入。');
       await handleLogin();
@@ -61,12 +78,12 @@ export default function NotesApp() {
     setLoading(false);
   };
 
-  // 登入：同樣把 使用者名稱 + 虛擬網域 拼起來驗證
   const handleLogin = async () => {
     if (!username || !password) return alert("請輸入帳號密碼");
-
     setLoading(true);
-    const email = username + FAKE_DOMAIN;
+
+    // 登入時也要轉碼才找得到人
+    const email = encodeName(username) + FAKE_DOMAIN;
 
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) {
@@ -82,37 +99,28 @@ export default function NotesApp() {
     await supabase.auth.signOut();
     setUser(null);
     setNotes([]);
-    setUsername(''); // 登出後清空欄位
+    setUsername('');
     setPassword('');
   };
-
-  // 取得顯示用的名字 (把後面的 @my-notes.com 切掉，只顯示小明)
-  const getDisplayName = () => {
-    if (!user || !user.email) return '使用者';
-    return user.email.split('@')[0];
-  }
 
   return (
     <div className="min-h-screen bg-indigo-50 flex flex-col items-center py-10 px-4">
       <h1 className="text-3xl font-bold text-indigo-900 mb-8">🔐 我的私密筆記本</h1>
 
       {!user ? (
-        // === 登入區塊 ===
         <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-sm border border-indigo-100">
           <h2 className="text-xl font-bold mb-6 text-center text-gray-700">歡迎回來</h2>
-          
           <div className="space-y-4">
             <div>
-              <label className="block text-sm text-gray-600 mb-1">使用者名稱</label>
+              <label className="block text-sm text-gray-600 mb-1">使用者名稱 (可輸入中文)</label>
               <input
-                type="text" // 這裡改成 text，不再是 email
-                placeholder="例如：admin"
+                type="text"
+                placeholder="例如：小明"
                 value={username}
                 className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 onChange={(e) => setUsername(e.target.value)}
               />
             </div>
-            
             <div>
               <label className="block text-sm text-gray-600 mb-1">密碼</label>
               <input
@@ -124,7 +132,6 @@ export default function NotesApp() {
               />
             </div>
           </div>
-
           <div className="flex gap-3 mt-8">
             <button 
               onClick={handleLogin}
@@ -143,15 +150,15 @@ export default function NotesApp() {
           </div>
         </div>
       ) : (
-        // === 筆記區塊 ===
         <div className="w-full max-w-2xl animate-fade-in">
-          
           <div className="flex justify-between items-center mb-6 bg-white p-4 rounded-xl shadow-sm border border-indigo-100">
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-600 font-bold">
-                {getDisplayName()[0].toUpperCase()}
+                {/* 顯示頭像字首 */}
+                {(decodeName(user.email) || 'U')[0]}
               </div>
-              <span className="text-gray-700 font-medium">{getDisplayName()}</span>
+              {/* 這裡使用 decodeName 把亂碼轉回中文顯示 */}
+              <span className="text-gray-700 font-medium">嗨，{decodeName(user.email)}</span>
             </div>
             <button 
               onClick={handleLogout}
