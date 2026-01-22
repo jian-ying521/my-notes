@@ -267,7 +267,7 @@ export default function RegistrationApp() {
               <div className="w-8 h-8 bg-amber-100 rounded-full flex items-center justify-center text-amber-800 font-bold">
                 {(decodeName(user.email || '') || 'U')[0]}
               </div>
-              <span className="text-gray-700 font-medium">嗨！發心的菩薩</span>
+              <span className="text-gray-700 font-medium">嗨~發心的菩薩們</span>
             </div>
             <button 
               onClick={handleLogout}
