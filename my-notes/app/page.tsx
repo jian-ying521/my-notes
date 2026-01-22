@@ -105,7 +105,7 @@ export default function NotesApp() {
 
   return (
     <div className="min-h-screen bg-indigo-50 flex flex-col items-center py-10 px-4">
-      <h1 className="text-3xl font-bold text-indigo-900 mb-8">🔐 我的記事本</h1>
+      <h1 className="text-3xl font-bold text-indigo-900 mb-8">一一報名系統</h1>
 
       {!user ? (
         <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-sm border border-indigo-100">
@@ -125,7 +125,7 @@ export default function NotesApp() {
               <label className="block text-sm text-gray-600 mb-1">密碼</label>
               <input
                 type="password"
-                placeholder="輸入密碼六碼"
+                placeholder="輸入密碼至少六碼"
                 value={password}
                 className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 onChange={(e) => setPassword(e.target.value)}
