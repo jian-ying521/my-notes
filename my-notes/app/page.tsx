@@ -232,7 +232,7 @@ export default function RegistrationApp() {
               <label className="block text-sm text-gray-600 mb-1">密碼</label>
               <input
                 type="password"
-                placeholder="請輸入密碼"
+                placeholder="請輸入密碼至少六碼"
                 value={password}
                 className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500"
                 onChange={(e) => setPassword(e.target.value)}
@@ -267,7 +267,7 @@ export default function RegistrationApp() {
               <div className="w-8 h-8 bg-amber-100 rounded-full flex items-center justify-center text-amber-800 font-bold">
                 {(decodeName(user.email || '') || 'U')[0]}
               </div>
-              <span className="text-gray-700 font-medium">嗨，{decodeName(user.email || '')}</span>
+              <span className="text-gray-700 font-medium">嗨！發心的菩薩</span>
             </div>
             <button 
               onClick={handleLogout}
@@ -312,7 +312,7 @@ export default function RegistrationApp() {
                 
                 {/* 1. 大隊 */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">1. 大隊</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">大隊</label>
                   <select 
                     className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500"
                     value={formData.team_big}
@@ -322,12 +322,13 @@ export default function RegistrationApp() {
                     <option value="文殊隊">文殊隊</option>
                     <option value="普賢隊">普賢隊</option>
                     <option value="地藏隊">地藏隊</option>
+                    <option value="彌勒隊">彌勒隊</option>
                   </select>
                 </div>
 
                 {/* 2. 小隊 */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">2. 小隊</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">小隊</label>
                   <select 
                     className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500"
                     value={formData.team_small}
@@ -337,12 +338,13 @@ export default function RegistrationApp() {
                     <option value="第2小隊">第2小隊</option>
                     <option value="第3小隊">第3小隊</option>
                     <option value="第4小隊">第4小隊</option>
+                    <option value="第5小隊">第4小隊</option>
                   </select>
                 </div>
 
                 {/* 3. 精舍 */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">3. 精舍 <span className="text-red-500">* (限2字)</span></label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">精舍 <span className="text-red-500">* (限2字)</span></label>
                   <input
                     type="text"
                     maxLength={2}
@@ -354,7 +356,7 @@ export default function RegistrationApp() {
 
                 {/* 4. 姓名 */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">4. 姓名 <span className="text-red-500">*</span></label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">姓名 <span className="text-red-500">*</span></label>
                   <input
                     type="text"
                     readOnly
@@ -365,7 +367,7 @@ export default function RegistrationApp() {
 
                 {/* 5. 法名 */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">5. 法名 <span className="text-gray-400">(限2字)</span></label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">法名 <span className="text-gray-400">(限2字)</span></label>
                   <input
                     type="text"
                     maxLength={2}
@@ -377,7 +379,7 @@ export default function RegistrationApp() {
 
                 {/* 6. 新增異動 */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">6. 新增異動 <span className="text-red-500">*</span></label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">新增異動 <span className="text-red-500">*</span></label>
                   <select 
                     className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500"
                     value={formData.action_type}
@@ -390,7 +392,7 @@ export default function RegistrationApp() {
 
                 {/* 7, 8. 發心起 日/時 */}
                 <div className="lg:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">7, 8. 發心起日/時 <span className="text-red-500">*</span></label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">發心起日/時 <span className="text-red-500">*</span></label>
                   <div className="flex gap-2">
                     <input
                       type="date"
@@ -409,7 +411,7 @@ export default function RegistrationApp() {
 
                 {/* 9, 10. 發心迄 日/時 */}
                 <div className="lg:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">9, 10. 發心迄日/時 <span className="text-red-500">*</span></label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">發心迄日/時 <span className="text-red-500">*</span></label>
                   <div className="flex gap-2">
                     <input
                       type="date"
@@ -435,13 +437,13 @@ export default function RegistrationApp() {
                       checked={formData.need_help}
                       onChange={(e) => setFormData({...formData, need_help: e.target.checked})}
                     />
-                    <span className="text-gray-700 font-medium">11. 是否需要協助報名 (是)</span>
+                    <span className="text-gray-700 font-medium">是否需要協助報名 (若在普台學校及中台週邊的居士，需師父協助報名，請勾選。是)</span>
                   </label>
                 </div>
 
                 {/* 12. 想對師父說的話 */}
                 <div className="md:col-span-2 lg:col-span-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">12. 想對師父說的話</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">想對師父說的話</label>
                   <textarea
                     placeholder="請在此輸入..."
                     rows={2}
