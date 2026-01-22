@@ -3,11 +3,15 @@
 import { useEffect, useState } from 'react';
 
 // ==========================================
-// [開發說明]
-// 模擬資料區塊 (預覽用)
+// [⚠️ 重要：環境切換說明]
+// 目前的預覽環境無法連接真實 Supabase，因此使用下方的 [模擬區塊]。
+// 當您在 VS Code (本地端) 執行時，請做以下動作：
+// 1. 確保已安裝套件: npm install @supabase/supabase-js
+// 2. [解除註解] 下方的「正式連線設定」
+// 3. [刪除或註解] 下方的「模擬 Supabase Client」
 // ==========================================
 
-/* // --- [真實 Supabase 連線] (在本地端請打開這個) ---
+/* // --- [正式連線設定] (複製回 VS Code 時請打開這個) ---
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 
 const createClient = () => {
@@ -16,74 +20,13 @@ const createClient = () => {
   return createSupabaseClient(supabaseUrl, supabaseKey);
 };
 */
-
-// --- [模擬 Supabase Client] ---
-let mockUser: any = null;
-let mockNotes: any[] = [
-  { 
-    id: 1, 
-    team_big: '觀音隊',
-    team_small: '第1小隊',
-    monastery: '台北',
-    real_name: '王小明',
-    dharma_name: '傳明',
-    action_type: '新增',
-    start_date: '2023-10-01',
-    start_time: '08:00',
-    end_date: '2023-10-01',
-    end_time: '12:00',
-    need_help: true,
-    memo: '無', 
-    created_at: new Date('2023-10-01T08:00:00').toISOString() 
-  },
-  { 
-    id: 2, 
-    team_big: '文殊隊',
-    team_small: '第2小隊',
-    monastery: '台中',
-    real_name: '王小明',
-    dharma_name: '傳明',
-    action_type: '新增',
-    start_date: '2025-12-31', // 未來的日期
-    start_time: '08:00',
-    end_date: '2025-12-31',
-    end_time: '17:00',
-    need_help: false,
-    memo: '跨年發心', 
-    created_at: new Date().toISOString() 
-  }
-];
-
-const createClient = () => {
-  return {
-    auth: {
-      getUser: async () => ({ data: { user: mockUser } }),
-      signUp: async ({ email, password }: any) => {
-        mockUser = { email, id: 'mock-id' };
-        return { error: null };
-      },
-      signInWithPassword: async ({ email, password }: any) => {
-        mockUser = { email, id: 'mock-id' };
-        return { data: { user: mockUser }, error: null };
-      },
-      signOut: async () => {
-        mockUser = null;
-        return { error: null };
-      },
-    },
-    from: (table: string) => ({
-      select: (columns: string) => ({
-        order: () => ({ data: [...mockNotes], error: null }),
-      }),
-      insert: async (data: any[]) => {
-        const newEntry = { ...data[0], id: Math.random(), created_at: new Date().toISOString() };
-        mockNotes = [newEntry, ...mockNotes];
-        return { error: null };
-      },
-    }),
-  };
+import { createClient as createSupabaseClient } from '@supabase/supabase-js';
+onst createClient = () => {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+  return createSupabaseClient(supabaseUrl, supabaseKey);
 };
-// ==========================================
+*/
 
 export default function RegistrationApp() {
   const [notes, setNotes] = useState<any[]>([]);
@@ -133,10 +76,9 @@ export default function RegistrationApp() {
     }
   };
 
-  // === 判斷是否已圓滿 (過期) ===
+  // 判斷是否過期 (已圓滿)
   const isExpired = (endDate: string, endTime: string) => {
     if (!endDate) return false;
-    // 組合迄日與迄時，若沒填時間預設為當天最後一秒
     const endDateTimeStr = `${endDate}T${endTime || '23:59:59'}`;
     const endDateTime = new Date(endDateTimeStr);
     const now = new Date();
@@ -149,7 +91,7 @@ export default function RegistrationApp() {
       const { data: { user } } = await supabase.auth.getUser();
       setUser(user);
       if (user) {
-        const currentName = decodeName(user.email);
+        const currentName = decodeName(user.email || '');
         setFormData(prev => ({ ...prev, real_name: currentName }));
         fetchNotes();
       }
@@ -166,7 +108,20 @@ export default function RegistrationApp() {
     if (data) setNotes(data);
   };
 
+  // === 紀錄登入動作 ===
+  const recordLogin = async (name: string, action: string = '登入') => {
+    try {
+      await supabase.from('login_history').insert([
+        { real_name: name, action: action }
+      ]);
+      console.log(`[模擬紀錄] ${name} ${action}`);
+    } catch (e) {
+      console.error('紀錄登入失敗', e);
+    }
+  };
+
   const handleSubmit = async () => {
+    // 驗證必填欄位
     if (!formData.monastery || !formData.real_name || !formData.action_type || 
         !formData.start_date || !formData.start_time || !formData.end_date || !formData.end_time) {
       return alert('請確認所有必填欄位皆已填寫');
@@ -187,7 +142,7 @@ export default function RegistrationApp() {
         team_big: '觀音隊',
         team_small: '第1小隊',
         monastery: '',
-        real_name: decodeName(user.email),
+        real_name: decodeName(user.email || ''),
         dharma_name: '',
         action_type: '新增',
         start_date: '',
@@ -198,7 +153,6 @@ export default function RegistrationApp() {
         memo: ''
       });
       fetchNotes();
-      // 送出後自動切換到歷史紀錄頁籤，讓使用者確認
       setActiveTab('history');
     } else {
       alert('寫入失敗：' + error.message);
@@ -218,6 +172,8 @@ export default function RegistrationApp() {
       setUser(user);
       setFormData(prev => ({ ...prev, real_name: username }));
       fetchNotes();
+      
+      await recordLogin(username, '註冊');
     }
     setLoading(false);
   };
@@ -234,6 +190,8 @@ export default function RegistrationApp() {
       setUser(data.user);
       setFormData(prev => ({ ...prev, real_name: username }));
       fetchNotes();
+
+      await recordLogin(username, '登入');
     }
     setLoading(false);
   };
@@ -244,7 +202,7 @@ export default function RegistrationApp() {
     setNotes([]);
     setUsername('');
     setPassword('');
-    setActiveTab('form'); // 登出後重置為表單頁
+    setActiveTab('form');
   };
 
   return (
@@ -292,6 +250,9 @@ export default function RegistrationApp() {
               註冊
             </button>
           </div>
+          <p className="mt-4 text-xs text-center text-gray-400">
+            *預覽模式：使用模擬資料
+          </p>
         </div>
       ) : (
         <div className="w-full max-w-4xl animate-fade-in">
@@ -299,9 +260,9 @@ export default function RegistrationApp() {
           <div className="flex justify-between items-center mb-6 bg-white p-4 rounded-xl shadow-sm border border-amber-100">
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 bg-amber-100 rounded-full flex items-center justify-center text-amber-800 font-bold">
-                {(decodeName(user.email) || 'U')[0]}
+                {(decodeName(user.email || '') || 'U')[0]}
               </div>
-              <span className="text-gray-700 font-medium">嗨，{decodeName(user.email)}</span>
+              <span className="text-gray-700 font-medium">嗨，{decodeName(user.email || '')}</span>
             </div>
             <button 
               onClick={handleLogout}
@@ -356,8 +317,6 @@ export default function RegistrationApp() {
                     <option value="文殊隊">文殊隊</option>
                     <option value="普賢隊">普賢隊</option>
                     <option value="地藏隊">地藏隊</option>
-                    <option value="彌勒隊">彌勒隊</option>
-
                   </select>
                 </div>
 
@@ -373,7 +332,6 @@ export default function RegistrationApp() {
                     <option value="第2小隊">第2小隊</option>
                     <option value="第3小隊">第3小隊</option>
                     <option value="第4小隊">第4小隊</option>
-                    <option value="第5小隊">第5小隊</option>
                   </select>
                 </div>
 
@@ -463,7 +421,7 @@ export default function RegistrationApp() {
                   </div>
                 </div>
 
-                {/* 11. 需要協助(若在普台學校及中台週邊的居士，需師父協助報名，請勾選。) */}
+                {/* 11. 是否需要協助 */}
                 <div className="md:col-span-2 lg:col-span-4">
                   <label className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition w-full md:w-auto">
                     <input 
@@ -472,7 +430,7 @@ export default function RegistrationApp() {
                       checked={formData.need_help}
                       onChange={(e) => setFormData({...formData, need_help: e.target.checked})}
                     />
-                    <span className="text-gray-700 font-medium">11. 需要協助報名 (是)</span>
+                    <span className="text-gray-700 font-medium">11. 是否需要協助報名 (是)</span>
                   </label>
                 </div>
 
@@ -504,20 +462,16 @@ export default function RegistrationApp() {
             <div className="space-y-4 animate-fade-in">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {notes.map((note) => {
-                  // 檢查是否已圓滿 (迄日已過)
                   const completed = isExpired(note.end_date, note.end_time);
-
                   return (
                     <div key={note.id} className={`bg-white p-5 rounded-xl shadow-sm border transition relative overflow-hidden ${completed ? 'border-gray-200 bg-gray-50/50' : 'border-amber-100 hover:border-amber-300'}`}>
-                      
-                      {/* 已圓滿標籤 (右上角浮水印效果) */}
+                      {/* 已圓滿標籤 */}
                       {completed && (
                         <div className="absolute top-0 right-0 bg-gray-200 text-gray-500 text-xs font-bold px-3 py-1 rounded-bl-lg z-10">
                           已圓滿
                         </div>
                       )}
-
-                      {/* 卡片標頭：狀態 + 大小隊 */}
+                      
                       <div className="flex justify-between items-start mb-3">
                          <div className="flex items-center gap-2">
                            <span className={`text-xs px-2 py-1 rounded-full text-white ${
@@ -533,7 +487,6 @@ export default function RegistrationApp() {
                          </div>
                       </div>
                       
-                      {/* 卡片內容 */}
                       <div className="text-sm text-gray-700 space-y-2">
                          <div className="grid grid-cols-2 gap-2">
                            <p><span className="text-gray-400">精舍：</span>{note.monastery}</p>
@@ -571,7 +524,6 @@ export default function RegistrationApp() {
                   );
                 })}
               </div>
-              
               {notes.length === 0 && (
                 <div className="text-center py-12 bg-white/50 rounded-xl border border-dashed border-gray-300">
                   <p className="text-gray-500">尚無登記紀錄</p>
