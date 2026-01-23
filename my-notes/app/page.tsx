@@ -29,6 +29,7 @@ const createClient = () => {
   return createSupabaseClient(supabaseUrl, supabaseKey);
 };
 */
+
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 
 const createClient = () => {
