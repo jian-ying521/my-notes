@@ -1,19 +1,20 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 
 // ==========================================
-// [⚠️ 模式切換說明]
-// 為了讓您在線上預覽不報錯，目前預設為 [模擬模式]。
+// [⚠️ 環境切換說明：請在 VS Code 中閱讀此段]
 //
-// ★★★ 當您複製回 VS Code 準備上線時，請務必執行以下動作： ★★★
-// 1. 確保終端機已安裝: npm install @supabase/supabase-js
-// 2. 解除下方 [A. 正式連線區塊] 的註解 (移除 /* 與 */)
-// 3. 刪除或註解掉 [B. 模擬連線區塊]
+// 目前為了讓您在線上能看到畫面，預設開啟 [模擬模式]。
+// 當您要部署到 Vercel 時，請執行以下 3 步驟：
+//
+// 1. 確保終端機已執行安裝: npm install @supabase/supabase-js
+// 2. [解除註解] 下方的「正式連線區塊 (A)」
+// 3. [刪除或註解] 下方的「模擬連線區塊 (B)」
 // ==========================================
 
 
-// --- [A. 正式連線區塊] (請在 VS Code 中解除這裡的註解) ---
+// --- [A. 正式連線區塊] (請在 VS Code 解除這段的註解 //) ---
 /*
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 
@@ -37,6 +38,7 @@ const createClient = () => {
 
 export default function RegistrationApp() {
   const [notes, setNotes] = useState<any[]>([]);
+  const [bulletins, setBulletins] = useState<any[]>([]);
   const [user, setUser] = useState<any>(null);
   
   const [username, setUsername] = useState('');
@@ -44,13 +46,16 @@ export default function RegistrationApp() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // [修改] 增加 'admin' 頁籤
-  const [activeTab, setActiveTab] = useState<'form' | 'history' | 'admin'>('form');
-
-  // [新增] 管理員篩選月份
+  // [修改] 將預設頁籤改為 'bulletin' (公告欄)
+  const [activeTab, setActiveTab] = useState<'form' | 'history' | 'admin' | 'bulletin'>('bulletin');
   const [filterMonth, setFilterMonth] = useState('');
 
-  // 設定管理員帳號 (顯示名稱為 admin 的人擁有權限)
+  // 公告欄位
+  const [bulletinText, setBulletinText] = useState('');
+  const [bulletinImage, setBulletinImage] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // 設定管理員帳號
   const ADMIN_ACCOUNT = 'admin'; 
 
   const [formData, setFormData] = useState({
@@ -80,9 +85,7 @@ export default function RegistrationApp() {
         hex += ('0000' + char).slice(-4);
       }
       return hex;
-    } catch {
-      return name;
-    }
+    } catch { return name; }
   };
 
   const decodeName = (email: string) => {
@@ -93,9 +96,7 @@ export default function RegistrationApp() {
         str += String.fromCharCode(parseInt(hex.substr(i, 4), 16));
       }
       return str;
-    } catch {
-      return email ? email.split('@')[0] : '使用者';
-    }
+    } catch { return email ? email.split('@')[0] : '使用者'; }
   };
 
   const getDisplayNameOnly = (email: string) => {
@@ -123,23 +124,19 @@ export default function RegistrationApp() {
     return endDateTime < now;
   };
 
-  // 判斷當前使用者是否為管理員
   const isAdmin = user ? getDisplayNameOnly(user.email || '') === ADMIN_ACCOUNT : false;
 
-  // [新增] 匯出 Excel (CSV) 功能
+  // 匯出 Excel
   const exportToExcel = () => {
     const dataToExport = getFilteredNotes();
-    
     if (dataToExport.length === 0) {
       alert("目前沒有資料可匯出");
       return;
     }
-
     const headers = [
       "大隊", "小隊", "精舍", "姓名", "身分證後四碼", "法名", "動作", 
       "開始日期", "開始時間", "結束日期", "結束時間", "需協助", "備註", "登記時間"
     ];
-
     const csvRows = [
       headers.join(','),
       ...dataToExport.map(note => [
@@ -159,10 +156,8 @@ export default function RegistrationApp() {
         new Date(note.created_at).toLocaleDateString()
       ].join(','))
     ];
-
     const csvString = csvRows.join('\n');
     const blob = new Blob(["\ufeff" + csvString], { type: 'text/csv;charset=utf-8;' });
-    
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
@@ -177,6 +172,52 @@ export default function RegistrationApp() {
     return notes.filter(note => note.start_date && note.start_date.startsWith(filterMonth));
   };
 
+  // 圖片上傳處理
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 1024 * 1024) { // 限制 1MB
+        alert('圖片大小請勿超過 1MB');
+        return;
+      }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setBulletinImage(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handlePostBulletin = async () => {
+    if (!bulletinText && !bulletinImage) return alert('請輸入文字或上傳圖片');
+    
+    setLoading(true);
+    const { error } = await supabase.from('bulletins').insert([
+      { content: bulletinText, image_url: bulletinImage }
+    ]);
+
+    if (error) {
+      alert('發布失敗：' + error.message);
+    } else {
+      alert('公告發布成功！');
+      setBulletinText('');
+      setBulletinImage('');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      fetchBulletins();
+    }
+    setLoading(false);
+  };
+
+  const fetchBulletins = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('bulletins')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (!error && data) setBulletins(data);
+    } catch (err) { console.error(err); }
+  };
+
   useEffect(() => {
     const getUser = async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -185,6 +226,7 @@ export default function RegistrationApp() {
         const currentName = getDisplayNameOnly(user.email || '');
         setFormData(prev => ({ ...prev, real_name: currentName }));
         fetchNotes(user);
+        fetchBulletins();
       }
     };
     getUser();
@@ -264,45 +306,38 @@ export default function RegistrationApp() {
     }
   };
 
-  // [修改] 使用 useCallback 包裝登出功能，供 useEffect 呼叫
   const handleLogout = useCallback(async () => {
     await supabase.auth.signOut();
     setUser(null);
     setNotes([]);
+    setBulletins([]);
     setUsername('');
     setIdLast4('');
     setPassword('');
-    setActiveTab('form');
+    // [修改] 登出後，將下次登入的預設頁籤重置為 'bulletin'
+    setActiveTab('bulletin');
   }, [supabase.auth]);
 
-  // [新增] 自動登出機制 (15分鐘無操作)
+  // 自動登出機制
   useEffect(() => {
     if (!user) return;
-
-    // 15分鐘 = 15 * 60 * 1000 毫秒
     const AUTO_LOGOUT_TIME = 15 * 60 * 1000; 
     let timeoutId: NodeJS.Timeout;
 
-    // 執行登出
     const performAutoLogout = () => {
       alert("您已閒置超過 15 分鐘，系統將自動登出以確保安全。");
       handleLogout();
     };
 
-    // 重置計時器
     const resetTimer = () => {
       clearTimeout(timeoutId);
       timeoutId = setTimeout(performAutoLogout, AUTO_LOGOUT_TIME);
     };
 
-    // 監聽使用者操作事件
     const events = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart'];
     events.forEach(event => document.addEventListener(event, resetTimer));
-
-    // 初始啟動計時
     resetTimer();
 
-    // 清除監聽 (組件卸載或 user 改變時)
     return () => {
       clearTimeout(timeoutId);
       events.forEach(event => document.removeEventListener(event, resetTimer));
@@ -336,6 +371,7 @@ export default function RegistrationApp() {
       setUser(user);
       setFormData(prev => ({ ...prev, real_name: username }));
       fetchNotes(user);
+      fetchBulletins();
       await recordLogin(uniqueId, '註冊');
     }
     setLoading(false);
@@ -343,19 +379,18 @@ export default function RegistrationApp() {
 
   const handleLogin = async () => {
     if (!username || !idLast4 || !password) return alert("請輸入完整資料");
-    
     setLoading(true);
     const uniqueId = username + idLast4;
     const email = encodeName(uniqueId) + FAKE_DOMAIN;
 
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) {
-      // @ts-ignore
       alert('登入失敗：' + error.message);
     } else {
       setUser(data.user);
       setFormData(prev => ({ ...prev, real_name: username }));
       fetchNotes(data.user);
+      fetchBulletins();
       await recordLogin(uniqueId, '登入');
     }
     setLoading(false);
@@ -402,28 +437,16 @@ export default function RegistrationApp() {
             </div>
           </div>
           <div className="flex gap-3 mt-8">
-            <button 
-              onClick={handleLogin}
-              disabled={loading}
-              className="flex-1 bg-amber-700 text-white py-3 rounded-lg font-medium hover:bg-amber-800 transition shadow-sm"
-            >
+            <button onClick={handleLogin} disabled={loading} className="flex-1 bg-amber-700 text-white py-3 rounded-lg font-medium hover:bg-amber-800 transition shadow-sm">
               {loading ? '...' : '登入'}
             </button>
-            <button 
-              onClick={handleSignUp}
-              disabled={loading}
-              className="flex-1 bg-white text-amber-700 border border-amber-300 py-3 rounded-lg font-medium hover:bg-amber-50 transition"
-            >
+            <button onClick={handleSignUp} disabled={loading} className="flex-1 bg-white text-amber-700 border border-amber-300 py-3 rounded-lg font-medium hover:bg-amber-50 transition">
               註冊
             </button>
           </div>
-          <p className="mt-4 text-xs text-center text-gray-400">
-            *預覽模式：使用模擬資料 (請依檔案說明切換為正式版)
-          </p>
         </div>
       ) : (
         <div className="w-full max-w-6xl animate-fade-in">
-          {/* Header & Logout */}
           <div className="flex justify-between items-center mb-6 bg-white p-4 rounded-xl shadow-sm border border-amber-100">
             <div className="flex items-center gap-3">
               <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold ${isAdmin ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-800'}`}>
@@ -437,53 +460,92 @@ export default function RegistrationApp() {
                 <span className="text-xs text-gray-400">ID: {decodeName(user.email || '').slice(-4)}</span>
               </div>
             </div>
-            <button 
-              onClick={handleLogout}
-              className="text-sm text-gray-500 hover:text-red-500 px-3 py-1 rounded-md hover:bg-red-50 transition"
-            >
+            <button onClick={handleLogout} className="text-sm text-gray-500 hover:text-red-500 px-3 py-1 rounded-md hover:bg-red-50 transition">
               登出
             </button>
           </div>
 
-          {/* === 頁籤切換按鈕 === */}
-          <div className="flex mb-6 bg-amber-100 p-1 rounded-lg w-full">
-            <button
-              onClick={() => setActiveTab('form')}
-              className={`flex-1 py-3 rounded-md font-bold transition-all ${
-                activeTab === 'form' 
-                  ? 'bg-white text-amber-800 shadow-sm' 
-                  : 'text-amber-600 hover:bg-amber-200/50'
-              }`}
-            >
+          {/* 頁籤切換按鈕 */}
+          <div className="flex mb-6 bg-amber-100 p-1 rounded-lg w-full overflow-x-auto">
+            <button onClick={() => setActiveTab('bulletin')} className={`flex-1 py-3 px-2 whitespace-nowrap rounded-md font-bold transition-all ${activeTab === 'bulletin' ? 'bg-white text-amber-800 shadow-sm' : 'text-amber-600 hover:bg-amber-200/50'}`}>
+              📢 公告欄
+            </button>
+            <button onClick={() => setActiveTab('form')} className={`flex-1 py-3 px-2 whitespace-nowrap rounded-md font-bold transition-all ${activeTab === 'form' ? 'bg-white text-amber-800 shadow-sm' : 'text-amber-600 hover:bg-amber-200/50'}`}>
               📝 我要報名
             </button>
-            <button
-              onClick={() => setActiveTab('history')}
-              className={`flex-1 py-3 rounded-md font-bold transition-all ${
-                activeTab === 'history' 
-                  ? 'bg-white text-amber-800 shadow-sm' 
-                  : 'text-amber-600 hover:bg-amber-200/50'
-              }`}
-            >
+            <button onClick={() => setActiveTab('history')} className={`flex-1 py-3 px-2 whitespace-nowrap rounded-md font-bold transition-all ${activeTab === 'history' ? 'bg-white text-amber-800 shadow-sm' : 'text-amber-600 hover:bg-amber-200/50'}`}>
               📋 我的紀錄
             </button>
-            
-            {/* 只有管理員才看得到的頁籤 */}
             {isAdmin && (
-              <button
-                onClick={() => setActiveTab('admin')}
-                className={`flex-1 py-3 rounded-md font-bold transition-all ${
-                  activeTab === 'admin' 
-                    ? 'bg-red-50 text-red-800 shadow-sm border border-red-200' 
-                    : 'text-red-600 hover:bg-red-50/50'
-                }`}
-              >
+              <button onClick={() => setActiveTab('admin')} className={`flex-1 py-3 px-2 whitespace-nowrap rounded-md font-bold transition-all ${activeTab === 'admin' ? 'bg-red-50 text-red-800 shadow-sm border border-red-200' : 'text-red-600 hover:bg-red-50/50'}`}>
                 🔧 系統管理員
               </button>
             )}
           </div>
 
-          {/* === 頁籤內容：表單 === */}
+          {/* === 公告欄頁籤 === */}
+          {activeTab === 'bulletin' && (
+            <div className="space-y-6 animate-fade-in">
+              {/* 只有管理員才看得到的發布區塊 */}
+              {isAdmin && (
+                <div className="bg-white p-6 rounded-xl shadow-md border border-orange-200">
+                  <h3 className="text-lg font-bold text-orange-800 mb-4">📢 發布新公告 (管理員專用)</h3>
+                  <textarea 
+                    className="w-full p-3 border border-orange-200 rounded-lg mb-3 focus:ring-2 focus:ring-orange-500 text-gray-900"
+                    rows={3}
+                    placeholder="輸入公告內容..."
+                    value={bulletinText}
+                    onChange={(e) => setBulletinText(e.target.value)}
+                  />
+                  <div className="flex gap-4 items-center">
+                    <input 
+                      type="file" 
+                      accept="image/*"
+                      ref={fileInputRef}
+                      onChange={handleImageUpload}
+                      className="text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-orange-50 file:text-orange-700 hover:file:bg-orange-100"
+                    />
+                    <button 
+                      onClick={handlePostBulletin}
+                      disabled={loading}
+                      className="ml-auto bg-orange-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-orange-700 transition"
+                    >
+                      {loading ? '發布中...' : '發布'}
+                    </button>
+                  </div>
+                  {bulletinImage && (
+                    <div className="mt-3">
+                      <p className="text-xs text-gray-400 mb-1">預覽圖片：</p>
+                      <img src={bulletinImage} alt="Preview" className="max-h-40 rounded border border-gray-200" />
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* 公告列表 (所有人可見) */}
+              <div className="space-y-4">
+                {bulletins.map((b) => (
+                  <div key={b.id} className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+                    <div className="flex justify-between items-start mb-2">
+                      <span className="bg-orange-100 text-orange-800 text-xs px-2 py-1 rounded-full font-bold">公告</span>
+                      <span className="text-xs text-gray-400">{new Date(b.created_at).toLocaleDateString()}</span>
+                    </div>
+                    <p className="text-gray-800 whitespace-pre-wrap leading-relaxed text-lg mb-4">{b.content}</p>
+                    {b.image_url && (
+                      <img src={b.image_url} alt="公告圖片" className="w-full max-w-2xl rounded-lg border border-gray-100" />
+                    )}
+                  </div>
+                ))}
+                {bulletins.length === 0 && (
+                  <div className="text-center py-12 text-gray-400 bg-white rounded-xl border border-dashed border-gray-200">
+                    目前沒有公告
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* === 報名表單頁籤 === */}
           {activeTab === 'form' && (
             <div className="bg-white p-8 rounded-xl shadow-md border border-amber-100 mb-8 animate-fade-in">
               <h3 className="text-xl font-bold text-amber-900 mb-6 flex items-center gap-2 border-b border-amber-100 pb-4">
@@ -491,160 +553,85 @@ export default function RegistrationApp() {
               </h3>
               
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                
                 {/* 1. 大隊 */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">1. 大隊</label>
-                  <select 
-                    className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 text-gray-900"
-                    value={formData.team_big}
-                    onChange={(e) => setFormData({...formData, team_big: e.target.value})}
-                  >
+                  <select className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900 focus:ring-2 focus:ring-amber-500" value={formData.team_big} onChange={(e) => setFormData({...formData, team_big: e.target.value})}>
                     <option value="觀音隊">觀音隊</option>
                     <option value="文殊隊">文殊隊</option>
                     <option value="普賢隊">普賢隊</option>
                     <option value="地藏隊">地藏隊</option>
                   </select>
                 </div>
-
                 {/* 2. 小隊 */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">2. 小隊</label>
-                  <select 
-                    className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 text-gray-900"
-                    value={formData.team_small}
-                    onChange={(e) => setFormData({...formData, team_small: e.target.value})}
-                  >
+                  <select className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900 focus:ring-2 focus:ring-amber-500" value={formData.team_small} onChange={(e) => setFormData({...formData, team_small: e.target.value})}>
                     <option value="第1小隊">第1小隊</option>
                     <option value="第2小隊">第2小隊</option>
                     <option value="第3小隊">第3小隊</option>
                     <option value="第4小隊">第4小隊</option>
                   </select>
                 </div>
-
                 {/* 3. 精舍 */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">3. 精舍 <span className="text-red-500">* (限2字)</span></label>
-                  <input
-                    type="text"
-                    maxLength={2}
-                    className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 text-gray-900"
-                    value={formData.monastery}
-                    onChange={(e) => setFormData({...formData, monastery: e.target.value})}
-                  />
+                  <input type="text" maxLength={2} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900 focus:ring-2 focus:ring-amber-500" value={formData.monastery} onChange={(e) => setFormData({...formData, monastery: e.target.value})} />
                 </div>
-
                 {/* 4. 姓名 */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">4. 姓名 <span className="text-red-500">*</span></label>
-                  <input
-                    type="text"
-                    readOnly
-                    className="w-full p-3 bg-gray-100 border border-gray-200 rounded-lg text-gray-500 cursor-not-allowed"
-                    value={formData.real_name}
-                  />
+                  <input type="text" readOnly className="w-full p-3 bg-gray-100 border border-gray-200 rounded-lg text-gray-500 cursor-not-allowed" value={formData.real_name} />
                 </div>
-
                 {/* 5. 法名 */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">5. 法名 <span className="text-gray-400">(限2字)</span></label>
-                  <input
-                    type="text"
-                    maxLength={2}
-                    className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 text-gray-900"
-                    value={formData.dharma_name}
-                    onChange={(e) => setFormData({...formData, dharma_name: e.target.value})}
-                  />
+                  <input type="text" maxLength={2} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900 focus:ring-2 focus:ring-amber-500" value={formData.dharma_name} onChange={(e) => setFormData({...formData, dharma_name: e.target.value})} />
                 </div>
-
                 {/* 6. 新增異動 */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">6. 新增異動 <span className="text-red-500">*</span></label>
-                  <select 
-                    className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 text-gray-900"
-                    value={formData.action_type}
-                    onChange={(e) => setFormData({...formData, action_type: e.target.value})}
-                  >
+                  <select className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900 focus:ring-2 focus:ring-amber-500" value={formData.action_type} onChange={(e) => setFormData({...formData, action_type: e.target.value})}>
                     <option value="新增">新增</option>
                     <option value="異動">異動</option>
                   </select>
                 </div>
-
-                {/* 7, 8. 發心起 日/時 */}
+                {/* 7, 8. 發心起 */}
                 <div className="lg:col-span-2">
                   <label className="block text-sm font-medium text-gray-700 mb-1">7, 8. 發心起日/時 <span className="text-red-500">*</span></label>
                   <div className="flex gap-2">
-                    <input
-                      type="date"
-                      className="flex-1 p-3 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 text-gray-900"
-                      value={formData.start_date}
-                      onChange={(e) => setFormData({...formData, start_date: e.target.value})}
-                    />
-                    <input
-                      type="time"
-                      className="w-32 p-3 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 text-gray-900"
-                      value={formData.start_time}
-                      onChange={(e) => setFormData({...formData, start_time: e.target.value})}
-                    />
+                    <input type="date" className="flex-1 p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900 focus:ring-2 focus:ring-amber-500" value={formData.start_date} onChange={(e) => setFormData({...formData, start_date: e.target.value})} />
+                    <input type="time" className="w-32 p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900 focus:ring-2 focus:ring-amber-500" value={formData.start_time} onChange={(e) => setFormData({...formData, start_time: e.target.value})} />
                   </div>
                 </div>
-
-                {/* 9, 10. 發心迄 日/時 */}
+                {/* 9, 10. 發心迄 */}
                 <div className="lg:col-span-2">
                   <label className="block text-sm font-medium text-gray-700 mb-1">9, 10. 發心迄日/時 <span className="text-red-500">*</span></label>
                   <div className="flex gap-2">
-                    <input
-                      type="date"
-                      className="flex-1 p-3 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 text-gray-900"
-                      value={formData.end_date}
-                      onChange={(e) => setFormData({...formData, end_date: e.target.value})}
-                    />
-                    <input
-                      type="time"
-                      className="w-32 p-3 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 text-gray-900"
-                      value={formData.end_time}
-                      onChange={(e) => setFormData({...formData, end_time: e.target.value})}
-                    />
+                    <input type="date" className="flex-1 p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900 focus:ring-2 focus:ring-amber-500" value={formData.end_date} onChange={(e) => setFormData({...formData, end_date: e.target.value})} />
+                    <input type="time" className="w-32 p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900 focus:ring-2 focus:ring-amber-500" value={formData.end_time} onChange={(e) => setFormData({...formData, end_time: e.target.value})} />
                   </div>
                 </div>
-
-                {/* 11. 是否需要協助 */}
+                {/* 11. 協助 */}
                 <div className="md:col-span-2 lg:col-span-4">
-                  <label className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition w-full md:w-auto">
-                    <input 
-                      type="checkbox"
-                      className="w-5 h-5 text-amber-600 rounded focus:ring-amber-500"
-                      checked={formData.need_help}
-                      onChange={(e) => setFormData({...formData, need_help: e.target.checked})}
-                    />
+                  <label className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition">
+                    <input type="checkbox" className="w-5 h-5 text-amber-600 rounded focus:ring-amber-500" checked={formData.need_help} onChange={(e) => setFormData({...formData, need_help: e.target.checked})} />
                     <span className="text-gray-700 font-medium">11. 是否需要協助報名 (是)</span>
                   </label>
                 </div>
-
-                {/* 12. 想對師父說的話 */}
+                {/* 12. 備註 */}
                 <div className="md:col-span-2 lg:col-span-4">
                   <label className="block text-sm font-medium text-gray-700 mb-1">12. 想對師父說的話</label>
-                  <textarea
-                    placeholder="請在此輸入..."
-                    rows={2}
-                    className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 text-gray-900"
-                    value={formData.memo}
-                    onChange={(e) => setFormData({...formData, memo: e.target.value})}
-                  />
+                  <textarea placeholder="請在此輸入..." rows={2} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900 focus:ring-2 focus:ring-amber-500" value={formData.memo} onChange={(e) => setFormData({...formData, memo: e.target.value})} />
                 </div>
-
               </div>
-
-              <button 
-                onClick={handleSubmit}
-                className="w-full bg-amber-700 text-white py-4 rounded-lg font-bold hover:bg-amber-800 transition shadow-lg text-lg mt-8"
-              >
+              <button onClick={handleSubmit} className="w-full bg-amber-700 text-white py-4 rounded-lg font-bold hover:bg-amber-800 transition shadow-lg text-lg mt-8">
                 送出發心資料
               </button>
             </div>
           )}
 
-          {/* === 頁籤內容：歷史紀錄 (僅顯示自己) === */}
+          {/* === 頁籤內容：歷史紀錄 === */}
           {activeTab === 'history' && (
             <div className="space-y-4 animate-fade-in">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -655,7 +642,7 @@ export default function RegistrationApp() {
                       {completed && <div className="absolute top-0 right-0 bg-gray-200 text-gray-500 text-xs font-bold px-3 py-1 rounded-bl-lg z-10">已圓滿</div>}
                       <div className="flex justify-between items-start mb-3">
                          <div className="flex items-center gap-2">
-                           <span className={`text-xs px-2 py-1 rounded-full text-white ${note.action_type === '新增' ? 'bg-blue-500' : 'bg-orange-500'}`}>{note.action_type}</span>
+                           <span className={`text-xs px-2 py-1 rounded-full text-white ${note.action_type === '新增' ? 'bg-blue-100 text-blue-800' : 'bg-orange-100 text-orange-800'}`}>{note.action_type}</span>
                            <h4 className={`font-bold text-lg ${completed ? 'text-gray-500' : 'text-amber-900'}`}>{note.team_big} - {note.team_small}</h4>
                          </div>
                       </div>
@@ -677,45 +664,26 @@ export default function RegistrationApp() {
                   );
                 })}
               </div>
-              {notes.length === 0 && (
-                <div className="text-center py-12 bg-white/50 rounded-xl border border-dashed border-gray-300">
-                  <p className="text-gray-500">尚無登記紀錄</p>
-                </div>
-              )}
+              {notes.length === 0 && <div className="text-center py-12 bg-white/50 rounded-xl border border-dashed border-gray-300"><p className="text-gray-500">尚無登記紀錄</p></div>}
             </div>
           )}
 
           {/* === 系統管理員頁籤 === */}
           {activeTab === 'admin' && isAdmin && (
              <div className="space-y-6 animate-fade-in">
-               
-               {/* 篩選與工具列 */}
                <div className="bg-white p-6 rounded-xl shadow-md border border-red-100 flex flex-col md:flex-row gap-4 items-end md:items-center justify-between">
                  <div className="w-full md:w-auto">
                    <label className="block text-sm font-bold text-gray-700 mb-2">篩選月份 (發心起日)</label>
-                   <input 
-                     type="month" 
-                     className="w-full p-2 border border-gray-300 rounded-lg text-gray-900 focus:ring-2 focus:ring-red-500"
-                     value={filterMonth}
-                     onChange={(e) => setFilterMonth(e.target.value)}
-                   />
+                   <input type="month" className="w-full p-2 border border-gray-300 rounded-lg text-gray-900 focus:ring-2 focus:ring-red-500" value={filterMonth} onChange={(e) => setFilterMonth(e.target.value)} />
                  </div>
-                 
                  <div className="flex gap-4 w-full md:w-auto">
                     <div className="text-right flex-1 md:flex-none">
                       <p className="text-xs text-gray-500">目前顯示</p>
                       <p className="text-2xl font-bold text-red-600">{getFilteredNotes().length} <span className="text-sm font-normal text-gray-400">筆資料</span></p>
                     </div>
-                    <button 
-                      onClick={exportToExcel}
-                      className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg font-bold shadow-sm transition flex items-center gap-2"
-                    >
-                      <span>📊</span> 匯出 Excel (CSV)
-                    </button>
+                    <button onClick={exportToExcel} className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg font-bold shadow-sm transition flex items-center gap-2"><span>📊</span> 匯出 Excel (CSV)</button>
                  </div>
                </div>
-
-               {/* 全體資料表格 */}
                <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden overflow-x-auto">
                  <table className="min-w-full divide-y divide-gray-200">
                    <thead className="bg-gray-50">
@@ -733,34 +701,19 @@ export default function RegistrationApp() {
                    <tbody className="bg-white divide-y divide-gray-200">
                      {getFilteredNotes().map((note) => (
                        <tr key={note.id} className="hover:bg-gray-50 transition">
-                         <td className="px-4 py-4 whitespace-nowrap">
-                           <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${note.action_type === '新增' ? 'bg-blue-100 text-blue-800' : 'bg-orange-100 text-orange-800'}`}>
-                             {note.action_type}
-                           </span>
-                         </td>
-                         <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
-                           {note.team_big} <span className="text-gray-400">|</span> {note.team_small}
-                         </td>
+                         <td className="px-4 py-4 whitespace-nowrap"><span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${note.action_type === '新增' ? 'bg-blue-100 text-blue-800' : 'bg-orange-100 text-orange-800'}`}>{note.action_type}</span></td>
+                         <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">{note.team_big} <span className="text-gray-400">|</span> {note.team_small}</td>
                          <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">{note.monastery}</td>
-                         <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                           {note.real_name} <span className="text-xs text-gray-400">({note.id_2})</span>
-                         </td>
+                         <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{note.real_name} <span className="text-xs text-gray-400">({note.id_2})</span></td>
                          <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{note.dharma_name || '-'}</td>
-                         <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
-                           <div>{note.start_date} {note.start_time}</div>
-                           <div className="text-xs text-gray-400">至 {note.end_date} {note.end_time}</div>
-                         </td>
+                         <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500"><div>{note.start_date} {note.start_time}</div><div className="text-xs text-gray-400">至 {note.end_date} {note.end_time}</div></td>
                          <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{note.need_help ? '是' : '否'}</td>
-                         <td className="px-4 py-4 text-sm text-gray-500 max-w-xs truncate" title={note.memo}>
-                           {note.memo || '-'}
-                         </td>
+                         <td className="px-4 py-4 text-sm text-gray-500 max-w-xs truncate" title={note.memo}>{note.memo || '-'}</td>
                        </tr>
                      ))}
                    </tbody>
                  </table>
-                 {getFilteredNotes().length === 0 && (
-                   <div className="p-8 text-center text-gray-500">此月份無資料</div>
-                 )}
+                 {getFilteredNotes().length === 0 && <div className="p-8 text-center text-gray-500">此月份無資料</div>}
                </div>
              </div>
           )}
