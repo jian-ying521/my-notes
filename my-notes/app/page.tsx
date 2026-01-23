@@ -45,7 +45,6 @@ const createClient = () => {
 
 
 
-
 export default function RegistrationApp() {
   const [notes, setNotes] = useState<any[]>([]);
   const [user, setUser] = useState<any>(null);
@@ -197,7 +196,7 @@ export default function RegistrationApp() {
 
     const insertData = {
       ...formData,
-      id_2: currentId2, // 寫入身分證後四碼
+      id_2: currentId2, // [修正] 使用小寫 id_2，確保寫入成功
       content: `【${formData.action_type}】${formData.team_big}-${formData.team_small} ${formData.real_name}` 
     };
 
