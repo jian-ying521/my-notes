@@ -47,6 +47,7 @@ export default function RegistrationApp() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
+  // 預設登入後進入公告欄
   const [activeTab, setActiveTab] = useState<'form' | 'history' | 'admin' | 'bulletin'>('bulletin');
   const [filterMonth, setFilterMonth] = useState('');
 
@@ -60,7 +61,7 @@ export default function RegistrationApp() {
   const [newPassword, setNewPassword] = useState('');
   const [pwdTargetUser, setPwdTargetUser] = useState<any>(null);
 
-  // [新增] 管理員新增使用者相關
+  // 管理員新增使用者相關
   const [addUserName, setAddUserName] = useState('');
   const [addUserLast4, setAddUserLast4] = useState('');
   const [addUserPwd, setAddUserPwd] = useState('');
@@ -244,7 +245,6 @@ export default function RegistrationApp() {
       if (process.env.NEXT_PUBLIC_SUPABASE_URL) {
           alert('提示：由於安全限制，正式環境中無法在前端直接修改他人密碼。\n請使用 Supabase Dashboard 或後端 API 進行操作。');
       } else {
-          // 模擬模式
           alert(`[模擬] 已強制修改使用者 ${pwdTargetUser.display_name} 的密碼為 ${newPassword}`);
       }
     }
@@ -254,7 +254,6 @@ export default function RegistrationApp() {
     setNewPassword('');
   };
 
-  // [新增] 管理員新增使用者
   const handleAdminAddUser = async () => {
     if(!addUserName || !addUserLast4 || !addUserPwd) return alert('請輸入完整資料');
     if(addUserLast4.length !== 4) return alert('ID 後四碼需為 4 碼');
@@ -264,12 +263,9 @@ export default function RegistrationApp() {
     const email = encodeName(uniqueId) + FAKE_DOMAIN;
 
     if (process.env.NEXT_PUBLIC_SUPABASE_URL) {
-        // 正式環境警告
         alert('提示：正式環境下，若使用此功能會將當前管理員登出並登入新帳號。\n若要不登出建立帳號，需使用後端 API (Supabase Admin SDK)。\n\n(目前操作將會模擬註冊流程)');
     }
 
-    // 在模擬環境中，我們可以假裝新增
-    // 在正式環境(Client端)，signUp 會導致當前 session 變更，這裡僅做演示邏輯
     const { error } = await supabase.auth.signUp({
         email,
         password: addUserPwd,
@@ -294,7 +290,6 @@ export default function RegistrationApp() {
     setLoading(false);
   };
 
-  // [新增] 管理員刪除使用者
   const handleAdminDeleteUser = async (targetId: string) => {
     if (!confirm('確定要刪除此使用者嗎？此動作無法復原！')) return;
     
@@ -303,13 +298,12 @@ export default function RegistrationApp() {
     if (process.env.NEXT_PUBLIC_SUPABASE_URL) {
         alert('提示：由於安全限制，正式環境中無法在前端直接刪除使用者。\n請使用 Supabase Dashboard 或後端 API (supabase.auth.admin.deleteUser) 進行操作。');
     } else {
-        // 模擬模式
         // @ts-ignore
         if (supabase.auth.admin && supabase.auth.admin.deleteUser) {
              // @ts-ignore
              await supabase.auth.admin.deleteUser(targetId);
              alert('[模擬] 使用者已刪除');
-             fetchAllUsers(); // 重新讀取模擬列表
+             fetchAllUsers(); 
         }
     }
     setLoading(false);
@@ -317,7 +311,7 @@ export default function RegistrationApp() {
 
   const fetchAllUsers = async () => {
     if (mockDb.users) {
-        setAllUsers([...mockDb.users]); // 複製一份以觸發更新
+        setAllUsers([...mockDb.users]); 
     }
   };
 
@@ -581,7 +575,7 @@ export default function RegistrationApp() {
             <div className="space-y-6 animate-fade-in">
               {isAdmin && (
                 <div className="bg-white p-6 rounded-xl shadow-md border border-orange-200">
-                  <h3 className="text-lg font-bold text-orange-800 mb-4">📢 發布新公告</h3>
+                  <h3 className="text-lg font-bold text-orange-800 mb-4">📢 發布新公告 (管理員專用)</h3>
                   <textarea className="w-full p-3 border border-orange-200 rounded-lg mb-3 focus:ring-2 focus:ring-orange-500 text-gray-900" rows={3} placeholder="輸入公告內容..." value={bulletinText} onChange={(e) => setBulletinText(e.target.value)} />
                   <div className="flex gap-4 items-center">
                     <input type="file" accept="image/*" ref={fileInputRef} onChange={handleImageUpload} className="text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-orange-50 file:text-orange-700 hover:file:bg-orange-100" />
@@ -610,7 +604,7 @@ export default function RegistrationApp() {
                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                  {/* ... Form fields ... */}
                  <div><label className="block text-sm font-medium text-gray-700 mb-1">1. 大隊</label><select className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900" value={formData.team_big} onChange={(e) => setFormData({...formData, team_big: e.target.value})}><option value="觀音隊">觀音隊</option><option value="文殊隊">文殊隊</option><option value="普賢隊">普賢隊</option><option value="地藏隊">地藏隊</option><option value="彌勒隊">彌勒隊</option></select></div>
-                 <div><label className="block text-sm font-medium text-gray-700 mb-1">2. 小隊</label><select className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900" value={formData.team_small} onChange={(e) => setFormData({...formData, team_small: e.target.value})}><option value="第1小隊">第1小隊</option><option value="第2小隊">第2小隊</option><option value="第3小隊">第3小隊</option><option value="第4小隊">第4小隊<option value="第5小隊">第5小隊</option></select></div>
+                 <div><label className="block text-sm font-medium text-gray-700 mb-1">2. 小隊</label><select className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900" value={formData.team_small} onChange={(e) => setFormData({...formData, team_small: e.target.value})}><option value="第1小隊">第1小隊</option><option value="第2小隊">第2小隊</option><option value="第3小隊">第3小隊</option><option value="第4小隊">第4小隊</option><option value="第5小隊">第5小隊</option></select></div>
                  <div><label className="block text-sm font-medium text-gray-700 mb-1">3. 精舍</label><input type="text" maxLength={2} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900" value={formData.monastery} onChange={(e) => setFormData({...formData, monastery: e.target.value})} /></div>
                  <div><label className="block text-sm font-medium text-gray-700 mb-1">4. 姓名</label><input type="text" readOnly className="w-full p-3 bg-gray-100 border border-gray-200 rounded-lg text-gray-500 cursor-not-allowed" value={formData.real_name} /></div>
                  <div><label className="block text-sm font-medium text-gray-700 mb-1">5. 法名</label><input type="text" maxLength={2} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900" value={formData.dharma_name} onChange={(e) => setFormData({...formData, dharma_name: e.target.value})} /></div>
@@ -645,6 +639,7 @@ export default function RegistrationApp() {
                   );
                 })}
               </div>
+              {notes.length === 0 && <div className="text-center py-12 bg-white/50 rounded-xl border border-dashed border-gray-300"><p className="text-gray-500">尚無登記紀錄</p></div>}
             </div>
           )}
 
