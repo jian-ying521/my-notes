@@ -3,29 +3,21 @@
 import { useEffect, useState } from 'react';
 
 // ==========================================
-// [⚠️ 環境切換說明：請在 VS Code 中閱讀此段]
+// [⚠️ 模式切換說明]
 //
-// 目前為了讓您在線上能看到畫面，預設開啟 [模擬模式]。
-// 當您要部署到 Vercel 時，請執行以下 3 步驟：
-//
-// 1. 確保終端機已執行安裝: npm install @supabase/supabase-js
-// 2. [解除註解] 下方的「正式連線區塊 (A)」
-// 3. [刪除或註解] 下方的「模擬連線區塊 (B)」
+// ★★★ 當您複製回 VS Code 準備上線時，請務必執行以下動作： ★★★
+// 1. 刪除下方 [B. 模擬連線區塊] 的所有程式碼
+// 2. 解除下方 [A. 正式連線區塊] 的註解 (移除 /* 與 */)
 // ==========================================
 
 
-// --- [A. 正式連線區塊] (請在 VS Code 解除這段的註解 //) ---
+// --- [A. 正式連線區塊] (請在 VS Code 中解除這裡的註解) ---
 /*
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 
 const createClient = () => {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
   const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-  
-  if (!supabaseUrl || !supabaseKey) {
-    console.warn('警告：找不到 Supabase 環境變數，請檢查 Vercel 設定。');
-  }
-
   return createSupabaseClient(supabaseUrl, supabaseKey);
 };
 */
@@ -35,13 +27,9 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 const createClient = () => {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
   const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-  
-  if (!supabaseUrl || !supabaseKey) {
-    console.warn('警告：找不到 Supabase 環境變數，請檢查 Vercel 設定。');
-  }
-
   return createSupabaseClient(supabaseUrl, supabaseKey);
 };
+
 
 
 
@@ -50,7 +38,7 @@ export default function RegistrationApp() {
   const [user, setUser] = useState<any>(null);
   
   const [username, setUsername] = useState('');
-  const [idLast4, setIdLast4] = useState(''); // 身分證後四碼
+  const [idLast4, setIdLast4] = useState(''); 
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -71,11 +59,10 @@ export default function RegistrationApp() {
     memo: ''
   });
   
-  // 建立 Supabase 客戶端實例
   const [supabase] = useState(() => createClient());
   const FAKE_DOMAIN = "@my-notes.com";
 
-  // === [修正] 轉碼工具 (使用 Hex 編碼解決亂碼問題) ===
+  // === 轉碼工具 ===
   const encodeName = (name: string) => {
     try {
       let hex = '';
@@ -102,17 +89,14 @@ export default function RegistrationApp() {
     }
   };
 
-  // 取得純姓名 (移除後四碼)
   const getDisplayNameOnly = (email: string) => {
     const fullName = decodeName(email);
-    // 假設後四碼是最後4個字元，且為數字
     if (fullName.length > 4 && !isNaN(Number(fullName.slice(-4)))) {
       return fullName.slice(0, -4);
     }
     return fullName;
   };
 
-  // 取得身分證後四碼
   const getIdLast4FromEmail = (email: string) => {
     if (!email) return '';
     const fullName = decodeName(email);
@@ -143,7 +127,7 @@ export default function RegistrationApp() {
     getUser();
   }, []);
 
-  // === 移除手動過濾，依賴 RLS ===
+  // 讀取資料
   const fetchNotes = async (targetUser: any = user) => {
     try {
       // @ts-ignore
@@ -174,24 +158,24 @@ export default function RegistrationApp() {
   };
 
   const handleSubmit = async () => {
+    if (!user) return alert('請先登入');
+
     if (!formData.monastery || !formData.real_name || !formData.action_type || 
         !formData.start_date || !formData.start_time || !formData.end_date || !formData.end_time) {
       return alert('請確認所有必填欄位皆已填寫');
     }
 
-    if (formData.monastery.length > 2) return alert('「精舍」欄位限填2個字');
-    if (formData.dharma_name && formData.dharma_name.length > 2) return alert('「法名」欄位限填2個字');
+    if (formData.monastery.length > 2) return alert('精舍欄位限填2個字');
+    if (formData.dharma_name && formData.dharma_name.length > 2) return alert('法名欄位限填2個字');
     
-    // 取得 ID 後四碼
-    const currentId2 = getIdLast4FromEmail(user?.email || '');
+    const currentId2 = getIdLast4FromEmail(user.email || '');
 
-    if (!currentId2) {
-      return alert('系統錯誤：無法抓取身分證後四碼，請嘗試重新登入。');
-    }
-
+    // [修正] 在寫入資料時，強制加上 user_id
+    // 這樣可以避免資料庫 RLS 驗證失敗
     const insertData = {
       ...formData,
-      id_2: currentId2, // [修正] 使用小寫 id_2，確保寫入成功
+      id_2: currentId2,
+      user_id: user.id, // 關鍵修正：綁定使用者 ID
       content: `【${formData.action_type}】${formData.team_big}-${formData.team_small} ${formData.real_name}` 
     };
 
@@ -212,30 +196,28 @@ export default function RegistrationApp() {
         need_help: false,
         memo: ''
       });
-      fetchNotes(user);
+      fetchNotes(user); 
       setActiveTab('history');
     } else {
       // @ts-ignore
-      alert('寫入失敗：' + error.message);
+      alert('寫入失敗：' + error.message + '\n(建議檢查 Supabase 是否已建立 id_2 欄位)');
     }
   };
 
   const handleSignUp = async () => {
-    if (!username || !idLast4 || !password) return alert("請輸入姓名、身分證後四碼與密碼");
+    if (!username || !idLast4 || !password) return alert("請輸入完整資料");
     if (idLast4.length !== 4) return alert("身分證後四碼必須為 4 位數字");
 
     setLoading(true);
     const uniqueId = username + idLast4;
     const email = encodeName(uniqueId) + FAKE_DOMAIN; 
     
-    // 註冊時同時寫入 display_name
     const { error } = await supabase.auth.signUp({ 
       email, 
       password,
       options: {
         data: {
-          display_name: username, // 給程式讀取用
-          full_name: username,    // 給 Supabase 後台顯示用
+          display_name: username,
           id_last4: idLast4
         }
       }
@@ -254,8 +236,7 @@ export default function RegistrationApp() {
   };
 
   const handleLogin = async () => {
-    if (!username || !idLast4 || !password) return alert("請輸入姓名、身分證後四碼與密碼");
-    
+    if (!username || !idLast4 || !password) return alert("請輸入完整資料");
     setLoading(true);
     const uniqueId = username + idLast4;
     const email = encodeName(uniqueId) + FAKE_DOMAIN;
@@ -306,7 +287,7 @@ export default function RegistrationApp() {
               <input
                 type="text"
                 maxLength={4}
-                placeholder="例如：1234 (避免同名混淆)"
+                placeholder="例如：1234"
                 value={idLast4}
                 className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 text-gray-900"
                 onChange={(e) => setIdLast4(e.target.value)}
@@ -364,7 +345,6 @@ export default function RegistrationApp() {
             </button>
           </div>
 
-          {/* === 頁籤切換按鈕 === */}
           <div className="flex mb-6 bg-amber-100 p-1 rounded-lg w-full">
             <button
               onClick={() => setActiveTab('form')}
@@ -388,7 +368,6 @@ export default function RegistrationApp() {
             </button>
           </div>
 
-          {/* === 頁籤內容：表單 === */}
           {activeTab === 'form' && (
             <div className="bg-white p-8 rounded-xl shadow-md border border-amber-100 mb-8 animate-fade-in">
               <h3 className="text-xl font-bold text-amber-900 mb-6 flex items-center gap-2 border-b border-amber-100 pb-4">
@@ -397,7 +376,6 @@ export default function RegistrationApp() {
               
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                 
-                {/* 1. 大隊 */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">1. 大隊</label>
                   <select 
@@ -412,7 +390,6 @@ export default function RegistrationApp() {
                   </select>
                 </div>
 
-                {/* 2. 小隊 */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">2. 小隊</label>
                   <select 
@@ -427,7 +404,6 @@ export default function RegistrationApp() {
                   </select>
                 </div>
 
-                {/* 3. 精舍 */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">3. 精舍 <span className="text-red-500">* (限2字)</span></label>
                   <input
@@ -439,7 +415,6 @@ export default function RegistrationApp() {
                   />
                 </div>
 
-                {/* 4. 姓名 */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">4. 姓名 <span className="text-red-500">*</span></label>
                   <input
@@ -450,7 +425,6 @@ export default function RegistrationApp() {
                   />
                 </div>
 
-                {/* 5. 法名 */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">5. 法名 <span className="text-gray-400">(限2字)</span></label>
                   <input
@@ -462,7 +436,6 @@ export default function RegistrationApp() {
                   />
                 </div>
 
-                {/* 6. 新增異動 */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">6. 新增異動 <span className="text-red-500">*</span></label>
                   <select 
@@ -475,7 +448,6 @@ export default function RegistrationApp() {
                   </select>
                 </div>
 
-                {/* 7, 8. 發心起 日/時 */}
                 <div className="lg:col-span-2">
                   <label className="block text-sm font-medium text-gray-700 mb-1">7, 8. 發心起日/時 <span className="text-red-500">*</span></label>
                   <div className="flex gap-2">
@@ -494,7 +466,6 @@ export default function RegistrationApp() {
                   </div>
                 </div>
 
-                {/* 9, 10. 發心迄 日/時 */}
                 <div className="lg:col-span-2">
                   <label className="block text-sm font-medium text-gray-700 mb-1">9, 10. 發心迄日/時 <span className="text-red-500">*</span></label>
                   <div className="flex gap-2">
@@ -513,7 +484,6 @@ export default function RegistrationApp() {
                   </div>
                 </div>
 
-                {/* 11. 是否需要協助 */}
                 <div className="md:col-span-2 lg:col-span-4">
                   <label className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition w-full md:w-auto">
                     <input 
@@ -526,7 +496,6 @@ export default function RegistrationApp() {
                   </label>
                 </div>
 
-                {/* 12. 想對師父說的話 */}
                 <div className="md:col-span-2 lg:col-span-4">
                   <label className="block text-sm font-medium text-gray-700 mb-1">12. 想對師父說的話</label>
                   <textarea
@@ -549,7 +518,6 @@ export default function RegistrationApp() {
             </div>
           )}
 
-          {/* === 頁籤內容：歷史紀錄 (卡片式) === */}
           {activeTab === 'history' && (
             <div className="space-y-4 animate-fade-in">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -557,28 +525,13 @@ export default function RegistrationApp() {
                   const completed = isExpired(note.end_date, note.end_time);
                   return (
                     <div key={note.id} className={`bg-white p-5 rounded-xl shadow-sm border transition relative overflow-hidden ${completed ? 'border-gray-200 bg-gray-50/50' : 'border-amber-100 hover:border-amber-300'}`}>
-                      {/* 已圓滿標籤 */}
-                      {completed && (
-                        <div className="absolute top-0 right-0 bg-gray-200 text-gray-500 text-xs font-bold px-3 py-1 rounded-bl-lg z-10">
-                          已圓滿
-                        </div>
-                      )}
-                      
+                      {completed && <div className="absolute top-0 right-0 bg-gray-200 text-gray-500 text-xs font-bold px-3 py-1 rounded-bl-lg z-10">已圓滿</div>}
                       <div className="flex justify-between items-start mb-3">
                          <div className="flex items-center gap-2">
-                           <span className={`text-xs px-2 py-1 rounded-full text-white ${
-                             completed 
-                               ? 'bg-gray-400' 
-                               : note.action_type === '新增' ? 'bg-blue-500' : 'bg-orange-500'
-                           }`}>
-                             {note.action_type}
-                           </span>
-                           <h4 className={`font-bold text-lg ${completed ? 'text-gray-500' : 'text-amber-900'}`}>
-                             {note.team_big} - {note.team_small}
-                           </h4>
+                           <span className={`text-xs px-2 py-1 rounded-full text-white ${note.action_type === '新增' ? 'bg-blue-500' : 'bg-orange-500'}`}>{note.action_type}</span>
+                           <h4 className={`font-bold text-lg ${completed ? 'text-gray-500' : 'text-amber-900'}`}>{note.team_big} - {note.team_small}</h4>
                          </div>
                       </div>
-                      
                       <div className="text-sm text-gray-700 space-y-2">
                          <div className="grid grid-cols-2 gap-2">
                            <p><span className="text-gray-400">精舍：</span>{note.monastery}</p>
@@ -586,32 +539,13 @@ export default function RegistrationApp() {
                            <p><span className="text-gray-400">法名：</span>{note.dharma_name || '-'}</p>
                            <p><span className="text-gray-400">協助：</span>{note.need_help ? '是' : '否'}</p>
                          </div>
-                         
                          <div className="border-t border-dashed border-gray-200 pt-2 mt-2">
-                           <p className="flex flex-col sm:flex-row sm:gap-2">
-                             <span className="text-gray-400 whitespace-nowrap">起：</span>
-                             <span className={completed ? 'text-gray-500' : 'text-gray-800'}>
-                               {note.start_date} {note.start_time}
-                             </span>
-                           </p>
-                           <p className="flex flex-col sm:flex-row sm:gap-2">
-                             <span className="text-gray-400 whitespace-nowrap">迄：</span>
-                             <span className={completed ? 'text-gray-500' : 'text-gray-800'}>
-                               {note.end_date} {note.end_time}
-                             </span>
-                           </p>
+                           <p className="flex flex-col sm:flex-row sm:gap-2"><span className="text-gray-400 whitespace-nowrap">起：</span><span className={completed ? 'text-gray-500' : 'text-gray-800'}>{note.start_date} {note.start_time}</span></p>
+                           <p className="flex flex-col sm:flex-row sm:gap-2"><span className="text-gray-400 whitespace-nowrap">迄：</span><span className={completed ? 'text-gray-500' : 'text-gray-800'}>{note.end_date} {note.end_time}</span></p>
                          </div>
-
-                         {note.memo && (
-                           <div className="bg-amber-50 p-2 rounded text-xs text-gray-600 mt-2">
-                             <span className="font-bold text-amber-700">想說的話：</span>{note.memo}
-                           </div>
-                         )}
+                         {note.memo && <div className="bg-amber-50 p-2 rounded text-xs text-gray-600 mt-2"><span className="font-bold text-amber-700">想說的話：</span>{note.memo}</div>}
                       </div>
-                      
-                      <p className="text-xs text-right text-gray-300 mt-3">
-                        登記於：{new Date(note.created_at).toLocaleDateString()}
-                      </p>
+                      <p className="text-xs text-right text-gray-300 mt-3">登記於：{new Date(note.created_at).toLocaleDateString()}</p>
                     </div>
                   );
                 })}
