@@ -34,6 +34,7 @@ const createClient = () => {
 
 
 
+
 export default function RegistrationApp() {
   const [notes, setNotes] = useState<any[]>([]);
   const [user, setUser] = useState<any>(null);
@@ -94,11 +95,19 @@ export default function RegistrationApp() {
   // 取得純姓名 (移除後四碼)
   const getDisplayNameOnly = (email: string) => {
     const fullName = decodeName(email);
-    // 假設後四碼是最後4個字元，且為數字
     if (fullName.length > 4 && !isNaN(Number(fullName.slice(-4)))) {
       return fullName.slice(0, -4);
     }
     return fullName;
+  };
+
+  // 取得身分證後四碼
+  const getIdLast4FromEmail = (email: string) => {
+    const fullName = decodeName(email);
+    if (fullName.length > 4 && !isNaN(Number(fullName.slice(-4)))) {
+      return fullName.slice(-4);
+    }
+    return '';
   };
 
   const isExpired = (endDate: string, endTime: string) => {
@@ -116,18 +125,27 @@ export default function RegistrationApp() {
       if (user) {
         const currentName = getDisplayNameOnly(user.email || '');
         setFormData(prev => ({ ...prev, real_name: currentName }));
-        fetchNotes();
+        fetchNotes(user); // 傳入 user 確保讀取正確
       }
     };
     getUser();
   }, []);
 
-  const fetchNotes = async () => {
+  // === 讀取資料：強制使用 姓名 + ID_2 過濾 ===
+  const fetchNotes = async (targetUser: any = user) => {
+    if (!targetUser || !targetUser.email) return;
+
+    // 解析出當前登入者的姓名與後四碼
+    const queryName = getDisplayNameOnly(targetUser.email);
+    const queryID2 = getIdLast4FromEmail(targetUser.email);
+
     try {
       // @ts-ignore
       const { data, error } = await supabase
         .from('notes')
         .select('*')
+        .eq('real_name', queryName) // 條件1: 姓名必須相符
+        .eq('ID_2', queryID2)       // 條件2: ID後四碼必須相符
         // @ts-ignore
         .order('created_at', { ascending: false });
       
@@ -162,6 +180,7 @@ export default function RegistrationApp() {
     
     const insertData = {
       ...formData,
+      ID_2: getIdLast4FromEmail(user?.email || ''), // 寫入 ID_2
       content: `【${formData.action_type}】${formData.team_big}-${formData.team_small} ${formData.real_name}` 
     };
 
@@ -182,7 +201,7 @@ export default function RegistrationApp() {
         need_help: false,
         memo: ''
       });
-      fetchNotes();
+      fetchNotes(user); // 重新讀取
       setActiveTab('history');
     } else {
       // @ts-ignore
@@ -195,10 +214,21 @@ export default function RegistrationApp() {
     if (idLast4.length !== 4) return alert("身分證後四碼必須為 4 位數字");
 
     setLoading(true);
+    // [帳號產生] 姓名 + 身分證後四碼 -> 確保唯一性
     const uniqueId = username + idLast4;
     const email = encodeName(uniqueId) + FAKE_DOMAIN; 
     
-    const { error } = await supabase.auth.signUp({ email, password });
+    // [關鍵修改] 註冊時將姓名寫入 display_name
+    const { error } = await supabase.auth.signUp({ 
+      email, 
+      password,
+      options: {
+        data: {
+          display_name: username, // 這是您要的 Display Name
+          id_last4: idLast4       // 順便存後四碼
+        }
+      }
+    });
     
     if (error) alert('註冊失敗：' + error.message);
     else {
@@ -206,7 +236,7 @@ export default function RegistrationApp() {
       const { data: { user } } = await supabase.auth.getUser();
       setUser(user);
       setFormData(prev => ({ ...prev, real_name: username }));
-      fetchNotes();
+      fetchNotes(user); // 傳入新 user
       await recordLogin(uniqueId, '註冊');
     }
     setLoading(false);
@@ -226,7 +256,7 @@ export default function RegistrationApp() {
     } else {
       setUser(data.user);
       setFormData(prev => ({ ...prev, real_name: username }));
-      fetchNotes();
+      fetchNotes(data.user); // 傳入登入後的 user
       await recordLogin(uniqueId, '登入');
     }
     setLoading(false);
@@ -251,7 +281,7 @@ export default function RegistrationApp() {
           <h2 className="text-xl font-bold mb-6 text-center text-gray-700">使用者登入</h2>
           <div className="space-y-4">
             <div>
-              <label className="block text-sm text-gray-600 mb-1">姓名 (帳號)</label>
+              <label className="block text-sm text-gray-600 mb-1">姓名</label>
               <input
                 type="text"
                 placeholder="例如：王小明"
