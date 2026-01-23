@@ -20,6 +20,11 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 const createClient = () => {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
   const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+  
+  if (!supabaseUrl || !supabaseKey) {
+    console.warn('警告：找不到 Supabase 環境變數，請檢查 Vercel 設定。');
+  }
+
   return createSupabaseClient(supabaseUrl, supabaseKey);
 };
 */
@@ -28,6 +33,11 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 const createClient = () => {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
   const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+  
+  if (!supabaseUrl || !supabaseKey) {
+    console.warn('警告：找不到 Supabase 環境變數，請檢查 Vercel 設定。');
+  }
+
   return createSupabaseClient(supabaseUrl, supabaseKey);
 };
 
@@ -104,12 +114,19 @@ export default function RegistrationApp() {
   }, []);
 
   const fetchNotes = async () => {
-    const { data } = await supabase
+    // @ts-ignore
+    const { data, error } = await supabase
       .from('notes')
       .select('*')
       // @ts-ignore
       .order('created_at', { ascending: false });
-    if (data) setNotes(data);
+    
+    if (error) {
+      console.error('讀取失敗:', error);
+      if (user) alert('無法讀取歷史紀錄：' + error.message);
+    } else {
+      if (data) setNotes(data);
+    }
   };
 
   // === 紀錄登入動作 ===
@@ -159,7 +176,8 @@ export default function RegistrationApp() {
       fetchNotes();
       setActiveTab('history');
     } else {
-      alert('寫入失敗：' + error.message);
+      // @ts-ignore
+      alert('寫入失敗：' + error.message + '\n(請檢查 Supabase 是否已建立所有新欄位)');
     }
   };
 
@@ -255,7 +273,7 @@ export default function RegistrationApp() {
             </button>
           </div>
           <p className="mt-4 text-xs text-center text-gray-400">
-            *預覽模式：使用模擬資料庫 (請依檔案說明切換為正式版)
+            *預覽模式：使用模擬資料 (請依檔案說明切換為正式版)
           </p>
         </div>
       ) : (
