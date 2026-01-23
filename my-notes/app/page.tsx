@@ -49,6 +49,7 @@ export default function RegistrationApp() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
+  // 預設登入後進入公告欄
   const [activeTab, setActiveTab] = useState<'form' | 'history' | 'admin_data' | 'admin_users' | 'bulletin'>('bulletin');
   const [filterMonth, setFilterMonth] = useState('');
 
@@ -568,8 +569,6 @@ export default function RegistrationApp() {
             <button onClick={() => setActiveTab('bulletin')} className={`flex-1 py-3 px-2 whitespace-nowrap rounded-md font-bold transition-all ${activeTab === 'bulletin' ? 'bg-white text-amber-800 shadow-sm' : 'text-amber-600 hover:bg-amber-200/50'}`}>📢 公告欄</button>
             <button onClick={() => setActiveTab('form')} className={`flex-1 py-3 px-2 whitespace-nowrap rounded-md font-bold transition-all ${activeTab === 'form' ? 'bg-white text-amber-800 shadow-sm' : 'text-amber-600 hover:bg-amber-200/50'}`}>📝 我要報名</button>
             <button onClick={() => setActiveTab('history')} className={`flex-1 py-3 px-2 whitespace-nowrap rounded-md font-bold transition-all ${activeTab === 'history' ? 'bg-white text-amber-800 shadow-sm' : 'text-amber-600 hover:bg-amber-200/50'}`}>📋 我的紀錄</button>
-            
-            {/* 管理員功能 - 拆分為兩個獨立按鈕 */}
             {isAdmin && (
               <>
                 <button 
@@ -668,7 +667,6 @@ export default function RegistrationApp() {
             </div>
           )}
 
-          {/* === [修改] 頁籤內容：全部報名資料 (管理員) === */}
           {activeTab === 'admin_data' && isAdmin && (
              <div className="space-y-6 animate-fade-in">
                <div className="bg-white p-6 rounded-xl shadow-md border border-red-100">
@@ -698,7 +696,6 @@ export default function RegistrationApp() {
              </div>
           )}
 
-          {/* === [新增] 頁籤內容：使用者管理 (管理員) === */}
           {activeTab === 'admin_users' && isAdmin && (
              <div className="space-y-6 animate-fade-in">
                <div className="bg-white p-6 rounded-xl shadow-md border border-blue-100">
@@ -715,22 +712,49 @@ export default function RegistrationApp() {
                    </div>
                  </div>
 
-                 {/* 使用者列表 */}
-                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {allUsers.length > 0 ? allUsers.map(u => (
-                        <div key={u.id} className="border border-gray-200 p-4 rounded-lg bg-white shadow-sm flex flex-col justify-between">
-                            <div className="flex justify-between items-start mb-2">
-                                <div>
-                                    <p className="font-bold text-gray-800">{u.display_name}</p>
-                                    <p className="text-xs text-gray-500">ID: {u.id_last4}</p>
-                                </div>
-                                <button onClick={() => handleAdminDeleteUser(u.id)} className="text-gray-400 hover:text-red-500 transition" title="刪除使用者">🗑️</button>
-                            </div>
-                            <button onClick={() => openPwdModal(u)} className="w-full mt-2 text-xs bg-gray-50 border border-gray-200 text-gray-600 px-3 py-1.5 rounded hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200 transition">修改密碼</button>
-                        </div>
-                    )) : (
-                        <p className="text-gray-400 text-sm col-span-3 text-center py-4">暫無使用者資料 (需後端 API 支援)</p>
-                    )}
+                 {/* 使用者列表表格 */}
+                 <div className="bg-white rounded-lg border border-gray-200 overflow-hidden overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                        <thead className="bg-gray-50">
+                            <tr>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">姓名</th>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">ID 後四碼</th>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email (帳號)</th>
+                                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-200">
+                            {allUsers.length > 0 ? allUsers.map(u => (
+                                <tr key={u.id} className="hover:bg-gray-50">
+                                    <td className="px-4 py-3 text-sm font-medium text-gray-900">{u.display_name}</td>
+                                    <td className="px-4 py-3 text-sm text-gray-500">{u.id_last4}</td>
+                                    <td className="px-4 py-3 text-sm text-gray-400 font-mono text-xs">{u.email.substring(0, 10)}...</td>
+                                    <td className="px-4 py-3 text-right text-sm font-medium">
+                                        <div className="flex justify-end gap-2">
+                                            <button 
+                                                onClick={() => openPwdModal(u)}
+                                                className="text-blue-600 hover:text-blue-900 bg-blue-50 px-3 py-1 rounded border border-blue-100 transition"
+                                            >
+                                                修改密碼
+                                            </button>
+                                            <button 
+                                                onClick={() => handleAdminDeleteUser(u.id)}
+                                                className="text-red-600 hover:text-red-900 bg-red-50 px-3 py-1 rounded border border-red-100 transition"
+                                            >
+                                                刪除
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            )) : (
+                                <tr>
+                                    <td colSpan={4} className="px-4 py-8 text-center text-sm text-gray-500">
+                                        暫無使用者資料
+                                    </td>
+                                </tr>
+                            )}
+                        </tbody>
+                    </table>
                  </div>
                </div>
              </div>
