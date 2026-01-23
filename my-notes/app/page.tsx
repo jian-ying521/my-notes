@@ -310,10 +310,40 @@ export default function RegistrationApp() {
     setLoading(false);
   };
 
-  // 讀取所有使用者
+  // [修改] 讀取所有使用者 (支援正式環境從 notes 資料反推)
   const fetchAllUsers = async () => {
+    // 1. 優先使用 Mock 資料
     if (mockDb && mockDb.users) {
         setAllUsers([...mockDb.users]); 
+        return;
+    }
+    
+    // 2. 正式環境：從 notes 資料表反推所有使用者
+    // 因為前端無法直接讀取 auth.users，我們從報名紀錄中撈出所有不重複的人
+    try {
+        const { data, error } = await supabase
+            .from('notes')
+            .select('real_name, id_2, user_id')
+            .order('created_at', { ascending: false });
+
+        if (data) {
+            // 去除重複 (以 real_name + id_2 為唯一鍵)
+            const uniqueUsersMap = new Map();
+            data.forEach(item => {
+                const key = `${item.real_name}-${item.id_2}`;
+                if (!uniqueUsersMap.has(key)) {
+                    uniqueUsersMap.set(key, {
+                        id: item.user_id || Math.random().toString(), // 盡量用 user_id
+                        display_name: item.real_name,
+                        id_last4: item.id_2,
+                        email: '無法讀取' // 因為安全限制，無法反查 email
+                    });
+                }
+            });
+            setAllUsers(Array.from(uniqueUsersMap.values()));
+        }
+    } catch(e) {
+        console.error('Fetch users error', e);
     }
   };
 
@@ -480,7 +510,6 @@ export default function RegistrationApp() {
       setFormData(prev => ({ ...prev, real_name: username }));
       fetchNotes(user);
       fetchBulletins();
-      // 管理員檢查
       if (username.toLowerCase() === ADMIN_ACCOUNT) {
           fetchAllUsers();
       }
@@ -503,7 +532,6 @@ export default function RegistrationApp() {
       setFormData(prev => ({ ...prev, real_name: username }));
       fetchNotes(data.user);
       fetchBulletins();
-      // 管理員檢查
       if (username.toLowerCase() === ADMIN_ACCOUNT) {
           fetchAllUsers();
       }
