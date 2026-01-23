@@ -310,7 +310,7 @@ export default function RegistrationApp() {
     setLoading(false);
   };
 
-  // [修改] 讀取所有使用者 (支援正式環境從 notes 資料反推)
+  // 讀取所有使用者
   const fetchAllUsers = async () => {
     // 1. 優先使用 Mock 資料
     if (mockDb && mockDb.users) {
@@ -510,6 +510,7 @@ export default function RegistrationApp() {
       setFormData(prev => ({ ...prev, real_name: username }));
       fetchNotes(user);
       fetchBulletins();
+      // 管理員檢查
       if (username.toLowerCase() === ADMIN_ACCOUNT) {
           fetchAllUsers();
       }
@@ -532,6 +533,7 @@ export default function RegistrationApp() {
       setFormData(prev => ({ ...prev, real_name: username }));
       fetchNotes(data.user);
       fetchBulletins();
+      // 管理員檢查
       if (username.toLowerCase() === ADMIN_ACCOUNT) {
           fetchAllUsers();
       }
@@ -695,6 +697,7 @@ export default function RegistrationApp() {
             </div>
           )}
 
+          {/* === [修改] 頁籤內容：全部報名資料 (管理員) === */}
           {activeTab === 'admin_data' && isAdmin && (
              <div className="space-y-6 animate-fade-in">
                <div className="bg-white p-6 rounded-xl shadow-md border border-red-100">
@@ -724,6 +727,7 @@ export default function RegistrationApp() {
              </div>
           )}
 
+          {/* === [新增] 頁籤內容：使用者管理 (管理員) === */}
           {activeTab === 'admin_users' && isAdmin && (
              <div className="space-y-6 animate-fade-in">
                <div className="bg-white p-6 rounded-xl shadow-md border border-blue-100">
@@ -741,13 +745,13 @@ export default function RegistrationApp() {
                  </div>
 
                  {/* 使用者列表表格 */}
+                 <p className="text-sm text-gray-500 mb-2">有報名過的使用者，才會出現在列表上</p>
                  <div className="bg-white rounded-lg border border-gray-200 overflow-hidden overflow-x-auto">
                     <table className="min-w-full divide-y divide-gray-200">
                         <thead className="bg-gray-50">
                             <tr>
                                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">姓名</th>
                                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">ID 後四碼</th>
-                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email (帳號)</th>
                                 <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">操作</th>
                             </tr>
                         </thead>
@@ -756,7 +760,6 @@ export default function RegistrationApp() {
                                 <tr key={u.id} className="hover:bg-gray-50">
                                     <td className="px-4 py-3 text-sm font-medium text-gray-900">{u.display_name}</td>
                                     <td className="px-4 py-3 text-sm text-gray-500">{u.id_last4}</td>
-                                    <td className="px-4 py-3 text-sm text-gray-400 font-mono text-xs">{u.email.substring(0, 10)}...</td>
                                     <td className="px-4 py-3 text-right text-sm font-medium">
                                         <div className="flex justify-end gap-2">
                                             <button 
@@ -776,7 +779,7 @@ export default function RegistrationApp() {
                                 </tr>
                             )) : (
                                 <tr>
-                                    <td colSpan={4} className="px-4 py-8 text-center text-sm text-gray-500">
+                                    <td colSpan={3} className="px-4 py-8 text-center text-sm text-gray-500">
                                         暫無使用者資料
                                     </td>
                                 </tr>
