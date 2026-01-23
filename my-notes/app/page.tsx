@@ -3,23 +3,29 @@
 import { useEffect, useState } from 'react';
 
 // ==========================================
-// [⚠️ 模式切換說明]
-// 為了讓您在線上預覽不報錯，目前預設為 [模擬模式]。
+// [⚠️ 環境切換說明：請在 VS Code 中閱讀此段]
 //
-// ★★★ 當您複製回 VS Code 準備上線時，請務必執行以下動作： ★★★
-// 1. 確保終端機已安裝: npm install @supabase/supabase-js
-// 2. 解除下方 [A. 正式連線區塊] 的註解 (移除 /* 與 */)
-// 3. 刪除或註解掉 [B. 模擬連線區塊]
+// 目前為了讓您在線上能看到畫面，預設開啟 [模擬模式]。
+// 當您要部署到 Vercel 時，請執行以下 3 步驟：
+//
+// 1. 確保終端機已執行安裝: npm install @supabase/supabase-js
+// 2. [解除註解] 下方的「正式連線區塊 (A)」
+// 3. [刪除或註解] 下方的「模擬連線區塊 (B)」
 // ==========================================
 
 
-// --- [A. 正式連線區塊] (請在 VS Code 中解除這裡的註解) ---
+// --- [A. 正式連線區塊] (請在 VS Code 解除這段的註解 //) ---
 /*
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 
 const createClient = () => {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
   const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+  
+  if (!supabaseUrl || !supabaseKey) {
+    console.warn('警告：找不到 Supabase 環境變數，請檢查 Vercel 設定。');
+  }
+
   return createSupabaseClient(supabaseUrl, supabaseKey);
 };
 */
@@ -29,6 +35,11 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 const createClient = () => {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
   const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+  
+  if (!supabaseUrl || !supabaseKey) {
+    console.warn('警告：找不到 Supabase 環境變數，請檢查 Vercel 設定。');
+  }
+
   return createSupabaseClient(supabaseUrl, supabaseKey);
 };
 
@@ -103,6 +114,7 @@ export default function RegistrationApp() {
 
   // 取得身分證後四碼
   const getIdLast4FromEmail = (email: string) => {
+    if (!email) return '';
     const fullName = decodeName(email);
     if (fullName.length > 4 && !isNaN(Number(fullName.slice(-4)))) {
       return fullName.slice(-4);
@@ -125,17 +137,15 @@ export default function RegistrationApp() {
       if (user) {
         const currentName = getDisplayNameOnly(user.email || '');
         setFormData(prev => ({ ...prev, real_name: currentName }));
-        fetchNotes(user); // 傳入 user 確保讀取正確
+        fetchNotes(user);
       }
     };
     getUser();
   }, []);
 
-  // === 讀取資料：強制使用 姓名 + ID_2 過濾 ===
   const fetchNotes = async (targetUser: any = user) => {
     if (!targetUser || !targetUser.email) return;
 
-    // 解析出當前登入者的姓名與後四碼
     const queryName = getDisplayNameOnly(targetUser.email);
     const queryID2 = getIdLast4FromEmail(targetUser.email);
 
@@ -144,8 +154,8 @@ export default function RegistrationApp() {
       const { data, error } = await supabase
         .from('notes')
         .select('*')
-        .eq('real_name', queryName) // 條件1: 姓名必須相符
-        .eq('ID_2', queryID2)       // 條件2: ID後四碼必須相符
+        .eq('real_name', queryName)
+        .eq('id_2', queryID2)
         // @ts-ignore
         .order('created_at', { ascending: false });
       
@@ -178,9 +188,16 @@ export default function RegistrationApp() {
     if (formData.monastery.length > 2) return alert('「精舍」欄位限填2個字');
     if (formData.dharma_name && formData.dharma_name.length > 2) return alert('「法名」欄位限填2個字');
     
+    // 取得 ID 後四碼
+    const currentId2 = getIdLast4FromEmail(user?.email || '');
+
+    if (!currentId2) {
+      return alert('系統錯誤：無法抓取身分證後四碼，請嘗試重新登入。');
+    }
+
     const insertData = {
       ...formData,
-      ID_2: getIdLast4FromEmail(user?.email || ''), // 寫入 ID_2
+      id_2: currentId2, // 寫入身分證後四碼
       content: `【${formData.action_type}】${formData.team_big}-${formData.team_small} ${formData.real_name}` 
     };
 
@@ -201,7 +218,7 @@ export default function RegistrationApp() {
         need_help: false,
         memo: ''
       });
-      fetchNotes(user); // 重新讀取
+      fetchNotes(user);
       setActiveTab('history');
     } else {
       // @ts-ignore
@@ -214,18 +231,18 @@ export default function RegistrationApp() {
     if (idLast4.length !== 4) return alert("身分證後四碼必須為 4 位數字");
 
     setLoading(true);
-    // [帳號產生] 姓名 + 身分證後四碼 -> 確保唯一性
     const uniqueId = username + idLast4;
     const email = encodeName(uniqueId) + FAKE_DOMAIN; 
     
-    // [關鍵修改] 註冊時將姓名寫入 display_name
+    // 註冊時同時寫入 display_name
     const { error } = await supabase.auth.signUp({ 
       email, 
       password,
       options: {
         data: {
-          display_name: username, // 這是您要的 Display Name
-          id_last4: idLast4       // 順便存後四碼
+          display_name: username, // 給程式讀取用
+          full_name: username,    // 給 Supabase 後台顯示用
+          id_last4: idLast4
         }
       }
     });
@@ -236,7 +253,7 @@ export default function RegistrationApp() {
       const { data: { user } } = await supabase.auth.getUser();
       setUser(user);
       setFormData(prev => ({ ...prev, real_name: username }));
-      fetchNotes(user); // 傳入新 user
+      fetchNotes(user);
       await recordLogin(uniqueId, '註冊');
     }
     setLoading(false);
@@ -256,7 +273,7 @@ export default function RegistrationApp() {
     } else {
       setUser(data.user);
       setFormData(prev => ({ ...prev, real_name: username }));
-      fetchNotes(data.user); // 傳入登入後的 user
+      fetchNotes(data.user);
       await recordLogin(uniqueId, '登入');
     }
     setLoading(false);
