@@ -45,7 +45,6 @@ const createClient = () => {
 
 
 
-
 export default function RegistrationApp() {
   const [notes, setNotes] = useState<any[]>([]);
   const [user, setUser] = useState<any>(null);
@@ -77,13 +76,11 @@ export default function RegistrationApp() {
   const [supabase] = useState(() => createClient());
   const FAKE_DOMAIN = "@my-notes.com";
 
-  // === [修正] 轉碼工具 (改用 16 進位 Hex 編碼) ===
-  // 解決 Base64 大小寫敏感導致的亂碼問題
+  // === 轉碼工具 (Hex 編碼解決大小寫問題) ===
   const encodeName = (name: string) => {
     try {
       let hex = '';
       for (let i = 0; i < name.length; i++) {
-        // 將每個字轉為 4 位數的 16 進位碼 (例如 "小" -> "5c0f")
         const char = name.charCodeAt(i).toString(16);
         hex += ('0000' + char).slice(-4);
       }
@@ -95,10 +92,8 @@ export default function RegistrationApp() {
 
   const decodeName = (email: string) => {
     try {
-      // 取出 @ 前面的 hex 字串
       const hex = email.split('@')[0];
       let str = '';
-      // 每 4 個字元轉回一個中文字
       for (let i = 0; i < hex.length; i += 4) {
         str += String.fromCharCode(parseInt(hex.substr(i, 4), 16));
       }
@@ -255,6 +250,7 @@ export default function RegistrationApp() {
           <div className="space-y-4">
             <div>
               <label className="block text-sm text-gray-600 mb-1">姓名 (帳號)</label>
+              {/* 強制文字顏色 text-gray-900，防止手機深色模式變白字 */}
               <input
                 type="text"
                 placeholder="例如：王小明"
