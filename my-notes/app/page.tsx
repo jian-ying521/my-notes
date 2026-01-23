@@ -4,10 +4,12 @@ import { useEffect, useState } from 'react';
 
 // ==========================================
 // [⚠️ 模式切換說明]
+// 為了讓您在線上預覽不報錯，目前預設為 [模擬模式]。
 //
 // ★★★ 當您複製回 VS Code 準備上線時，請務必執行以下動作： ★★★
-// 1. 刪除下方 [B. 模擬連線區塊] 的所有程式碼
+// 1. 確保終端機已安裝: npm install @supabase/supabase-js
 // 2. 解除下方 [A. 正式連線區塊] 的註解 (移除 /* 與 */)
+// 3. 刪除或註解掉 [B. 模擬連線區塊]
 // ==========================================
 
 
@@ -43,6 +45,9 @@ export default function RegistrationApp() {
   const [loading, setLoading] = useState(false);
 
   const [activeTab, setActiveTab] = useState<'form' | 'history'>('form');
+
+  // [新增] 設定管理員帳號 (您可以修改這裡的名稱)
+  const ADMIN_ACCOUNT = 'admin'; 
 
   const [formData, setFormData] = useState({
     team_big: '觀音隊',
@@ -114,6 +119,9 @@ export default function RegistrationApp() {
     return endDateTime < now;
   };
 
+  // 判斷當前使用者是否為管理員
+  const isAdmin = user ? getDisplayNameOnly(user.email || '') === ADMIN_ACCOUNT : false;
+
   useEffect(() => {
     const getUser = async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -127,9 +135,10 @@ export default function RegistrationApp() {
     getUser();
   }, []);
 
-  // 讀取資料
   const fetchNotes = async (targetUser: any = user) => {
     try {
+      // 這裡不需要改程式碼，因為如果 Supabase RLS 設定正確
+      // 管理員自然會讀到所有資料，普通人只讀得到自己的
       // @ts-ignore
       const { data, error } = await supabase
         .from('notes')
@@ -170,12 +179,10 @@ export default function RegistrationApp() {
     
     const currentId2 = getIdLast4FromEmail(user.email || '');
 
-    // [修正] 在寫入資料時，強制加上 user_id
-    // 這樣可以避免資料庫 RLS 驗證失敗
     const insertData = {
       ...formData,
       id_2: currentId2,
-      user_id: user.id, // 關鍵修正：綁定使用者 ID
+      user_id: user.id,
       content: `【${formData.action_type}】${formData.team_big}-${formData.team_small} ${formData.real_name}` 
     };
 
@@ -200,7 +207,7 @@ export default function RegistrationApp() {
       setActiveTab('history');
     } else {
       // @ts-ignore
-      alert('寫入失敗：' + error.message + '\n(建議檢查 Supabase 是否已建立 id_2 欄位)');
+      alert('寫入失敗：' + error.message);
     }
   };
 
@@ -218,6 +225,7 @@ export default function RegistrationApp() {
       options: {
         data: {
           display_name: username,
+          full_name: username,
           id_last4: idLast4
         }
       }
@@ -237,6 +245,7 @@ export default function RegistrationApp() {
 
   const handleLogin = async () => {
     if (!username || !idLast4 || !password) return alert("請輸入完整資料");
+    
     setLoading(true);
     const uniqueId = username + idLast4;
     const email = encodeName(uniqueId) + FAKE_DOMAIN;
@@ -332,10 +341,13 @@ export default function RegistrationApp() {
               <div className="w-8 h-8 bg-amber-100 rounded-full flex items-center justify-center text-amber-800 font-bold">
                 {(getDisplayNameOnly(user.email || '') || 'U')[0]}
               </div>
-              <span className="text-gray-700 font-medium">
-                嗨，{getDisplayNameOnly(user.email || '')} 
-                <span className="text-xs text-gray-400 ml-1">(ID: {decodeName(user.email || '').slice(-4)})</span>
-              </span>
+              <div className="flex flex-col">
+                <span className="text-gray-700 font-medium flex items-center gap-2">
+                   嗨，{getDisplayNameOnly(user.email || '')} 
+                   {isAdmin && <span className="bg-red-500 text-white text-xs px-2 py-0.5 rounded-full">管理員</span>}
+                </span>
+                <span className="text-xs text-gray-400">ID: {decodeName(user.email || '').slice(-4)}</span>
+              </div>
             </div>
             <button 
               onClick={handleLogout}
@@ -345,6 +357,7 @@ export default function RegistrationApp() {
             </button>
           </div>
 
+          {/* === 頁籤切換按鈕 === */}
           <div className="flex mb-6 bg-amber-100 p-1 rounded-lg w-full">
             <button
               onClick={() => setActiveTab('form')}
@@ -364,10 +377,11 @@ export default function RegistrationApp() {
                   : 'text-amber-600 hover:bg-amber-200/50'
               }`}
             >
-              📋 歷史登記紀錄
+              {isAdmin ? '📂 所有報名紀錄 (管理員)' : '📋 歷史登記紀錄'}
             </button>
           </div>
 
+          {/* === 頁籤內容：表單 === */}
           {activeTab === 'form' && (
             <div className="bg-white p-8 rounded-xl shadow-md border border-amber-100 mb-8 animate-fade-in">
               <h3 className="text-xl font-bold text-amber-900 mb-6 flex items-center gap-2 border-b border-amber-100 pb-4">
@@ -376,6 +390,7 @@ export default function RegistrationApp() {
               
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                 
+                {/* 1. 大隊 */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">1. 大隊</label>
                   <select 
@@ -390,6 +405,7 @@ export default function RegistrationApp() {
                   </select>
                 </div>
 
+                {/* 2. 小隊 */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">2. 小隊</label>
                   <select 
@@ -404,6 +420,7 @@ export default function RegistrationApp() {
                   </select>
                 </div>
 
+                {/* 3. 精舍 */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">3. 精舍 <span className="text-red-500">* (限2字)</span></label>
                   <input
@@ -415,6 +432,7 @@ export default function RegistrationApp() {
                   />
                 </div>
 
+                {/* 4. 姓名 */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">4. 姓名 <span className="text-red-500">*</span></label>
                   <input
@@ -425,6 +443,7 @@ export default function RegistrationApp() {
                   />
                 </div>
 
+                {/* 5. 法名 */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">5. 法名 <span className="text-gray-400">(限2字)</span></label>
                   <input
@@ -436,6 +455,7 @@ export default function RegistrationApp() {
                   />
                 </div>
 
+                {/* 6. 新增異動 */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">6. 新增異動 <span className="text-red-500">*</span></label>
                   <select 
@@ -448,6 +468,7 @@ export default function RegistrationApp() {
                   </select>
                 </div>
 
+                {/* 7, 8. 發心起 日/時 */}
                 <div className="lg:col-span-2">
                   <label className="block text-sm font-medium text-gray-700 mb-1">7, 8. 發心起日/時 <span className="text-red-500">*</span></label>
                   <div className="flex gap-2">
@@ -466,6 +487,7 @@ export default function RegistrationApp() {
                   </div>
                 </div>
 
+                {/* 9, 10. 發心迄 日/時 */}
                 <div className="lg:col-span-2">
                   <label className="block text-sm font-medium text-gray-700 mb-1">9, 10. 發心迄日/時 <span className="text-red-500">*</span></label>
                   <div className="flex gap-2">
@@ -484,6 +506,7 @@ export default function RegistrationApp() {
                   </div>
                 </div>
 
+                {/* 11. 是否需要協助 */}
                 <div className="md:col-span-2 lg:col-span-4">
                   <label className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition w-full md:w-auto">
                     <input 
@@ -496,6 +519,7 @@ export default function RegistrationApp() {
                   </label>
                 </div>
 
+                {/* 12. 想對師父說的話 */}
                 <div className="md:col-span-2 lg:col-span-4">
                   <label className="block text-sm font-medium text-gray-700 mb-1">12. 想對師父說的話</label>
                   <textarea
@@ -518,6 +542,7 @@ export default function RegistrationApp() {
             </div>
           )}
 
+          {/* === 頁籤內容：歷史紀錄 (卡片式) === */}
           {activeTab === 'history' && (
             <div className="space-y-4 animate-fade-in">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -525,13 +550,28 @@ export default function RegistrationApp() {
                   const completed = isExpired(note.end_date, note.end_time);
                   return (
                     <div key={note.id} className={`bg-white p-5 rounded-xl shadow-sm border transition relative overflow-hidden ${completed ? 'border-gray-200 bg-gray-50/50' : 'border-amber-100 hover:border-amber-300'}`}>
-                      {completed && <div className="absolute top-0 right-0 bg-gray-200 text-gray-500 text-xs font-bold px-3 py-1 rounded-bl-lg z-10">已圓滿</div>}
+                      {/* 已圓滿標籤 */}
+                      {completed && (
+                        <div className="absolute top-0 right-0 bg-gray-200 text-gray-500 text-xs font-bold px-3 py-1 rounded-bl-lg z-10">
+                          已圓滿
+                        </div>
+                      )}
+                      
                       <div className="flex justify-between items-start mb-3">
                          <div className="flex items-center gap-2">
-                           <span className={`text-xs px-2 py-1 rounded-full text-white ${note.action_type === '新增' ? 'bg-blue-500' : 'bg-orange-500'}`}>{note.action_type}</span>
-                           <h4 className={`font-bold text-lg ${completed ? 'text-gray-500' : 'text-amber-900'}`}>{note.team_big} - {note.team_small}</h4>
+                           <span className={`text-xs px-2 py-1 rounded-full text-white ${
+                             completed 
+                               ? 'bg-gray-400' 
+                               : note.action_type === '新增' ? 'bg-blue-500' : 'bg-orange-500'
+                           }`}>
+                             {note.action_type}
+                           </span>
+                           <h4 className={`font-bold text-lg ${completed ? 'text-gray-500' : 'text-amber-900'}`}>
+                             {note.team_big} - {note.team_small}
+                           </h4>
                          </div>
                       </div>
+                      
                       <div className="text-sm text-gray-700 space-y-2">
                          <div className="grid grid-cols-2 gap-2">
                            <p><span className="text-gray-400">精舍：</span>{note.monastery}</p>
@@ -539,13 +579,32 @@ export default function RegistrationApp() {
                            <p><span className="text-gray-400">法名：</span>{note.dharma_name || '-'}</p>
                            <p><span className="text-gray-400">協助：</span>{note.need_help ? '是' : '否'}</p>
                          </div>
+                         
                          <div className="border-t border-dashed border-gray-200 pt-2 mt-2">
-                           <p className="flex flex-col sm:flex-row sm:gap-2"><span className="text-gray-400 whitespace-nowrap">起：</span><span className={completed ? 'text-gray-500' : 'text-gray-800'}>{note.start_date} {note.start_time}</span></p>
-                           <p className="flex flex-col sm:flex-row sm:gap-2"><span className="text-gray-400 whitespace-nowrap">迄：</span><span className={completed ? 'text-gray-500' : 'text-gray-800'}>{note.end_date} {note.end_time}</span></p>
+                           <p className="flex flex-col sm:flex-row sm:gap-2">
+                             <span className="text-gray-400 whitespace-nowrap">起：</span>
+                             <span className={completed ? 'text-gray-500' : 'text-gray-800'}>
+                               {note.start_date} {note.start_time}
+                             </span>
+                           </p>
+                           <p className="flex flex-col sm:flex-row sm:gap-2">
+                             <span className="text-gray-400 whitespace-nowrap">迄：</span>
+                             <span className={completed ? 'text-gray-500' : 'text-gray-800'}>
+                               {note.end_date} {note.end_time}
+                             </span>
+                           </p>
                          </div>
-                         {note.memo && <div className="bg-amber-50 p-2 rounded text-xs text-gray-600 mt-2"><span className="font-bold text-amber-700">想說的話：</span>{note.memo}</div>}
+
+                         {note.memo && (
+                           <div className="bg-amber-50 p-2 rounded text-xs text-gray-600 mt-2">
+                             <span className="font-bold text-amber-700">想說的話：</span>{note.memo}
+                           </div>
+                         )}
                       </div>
-                      <p className="text-xs text-right text-gray-300 mt-3">登記於：{new Date(note.created_at).toLocaleDateString()}</p>
+                      
+                      <p className="text-xs text-right text-gray-300 mt-3">
+                        登記於：{new Date(note.created_at).toLocaleDateString()}
+                      </p>
                     </div>
                   );
                 })}
