@@ -3,18 +3,16 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 
 // ==========================================
-// [⚠️ 環境切換說明：請在 VS Code 中閱讀此段]
-//
-// 目前為了讓您在線上能看到畫面，預設開啟 [模擬模式]。
-// 當您要部署到 Vercel 時，請執行以下 3 步驟：
-//
-// 1. 確保終端機已執行安裝: npm install @supabase/supabase-js
-// 2. [解除註解] 下方的「正式連線區塊 (A)」
-// 3. [刪除或註解] 下方的「模擬連線區塊 (B)」
+// [⚠️ 環境切換說明]
+// 目前預設開啟 [模擬模式] 供線上預覽。
+// 若要部署到 Vercel (正式環境)，請：
+// 1. 確保已安裝: npm install @supabase/supabase-js
+// 2. 解除下方 [A] 的註解
+// 3. 刪除或註解掉 [B]
 // ==========================================
 
 
-// --- [A. 正式連線區塊] (請在 VS Code 中解除這裡的註解) ---
+// --- [A. 正式連線區塊] ---
 /*
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 
@@ -45,7 +43,6 @@ export default function RegistrationApp() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // 預設登入後進入公告欄
   const [activeTab, setActiveTab] = useState<'form' | 'history' | 'admin' | 'bulletin'>('bulletin');
   const [filterMonth, setFilterMonth] = useState('');
 
@@ -54,17 +51,16 @@ export default function RegistrationApp() {
   const [bulletinImage, setBulletinImage] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // 修改密碼相關 State
+  // 修改密碼相關
   const [showPwdModal, setShowPwdModal] = useState(false);
   const [newPassword, setNewPassword] = useState('');
   const [pwdTargetUser, setPwdTargetUser] = useState<any>(null);
 
-  // 管理員新增使用者相關 State
+  // 管理員新增使用者相關
   const [addUserName, setAddUserName] = useState('');
   const [addUserLast4, setAddUserLast4] = useState('');
   const [addUserPwd, setAddUserPwd] = useState('');
 
-  // 設定管理員帳號
   const ADMIN_ACCOUNT = 'admin'; 
 
   const [formData, setFormData] = useState({
@@ -85,7 +81,7 @@ export default function RegistrationApp() {
   const [supabase] = useState(() => createClient());
   const FAKE_DOMAIN = "@my-notes.com";
 
-  // === 轉碼工具 ===
+  // === 轉碼工具 (Hex) ===
   const encodeName = (name: string) => {
     try {
       let hex = '';
@@ -230,7 +226,6 @@ export default function RegistrationApp() {
     setLoading(false);
   };
 
-  // 修改密碼 (包含一般使用者與管理員強制修改)
   const handleChangePassword = async () => {
     if (!newPassword || newPassword.length < 6) {
       return alert('密碼長度需至少 6 碼');
@@ -243,10 +238,8 @@ export default function RegistrationApp() {
       else alert('密碼修改成功！');
     } else {
       if (process.env.NEXT_PUBLIC_SUPABASE_URL) {
-          // 正式環境提示
-          alert('提示：由於 Supabase 安全限制，前端無法直接修改他人密碼。\n請使用 Supabase Dashboard 或後端 API 發送重設信。');
+          alert('提示：由於 Supabase 安全限制，正式環境中無法在前端直接修改他人密碼。\n請使用 Supabase Dashboard 或後端 API 發送重設信。');
       } else {
-          // 模擬環境
           alert(`[模擬] 已強制修改使用者 ${pwdTargetUser.display_name} 的密碼為 ${newPassword}`);
       }
     }
@@ -256,7 +249,6 @@ export default function RegistrationApp() {
     setNewPassword('');
   };
 
-  // 管理員新增使用者
   const handleAdminAddUser = async () => {
     if(!addUserName || !addUserLast4 || !addUserPwd) return alert('請輸入完整資料');
     if(addUserLast4.length !== 4) return alert('ID 後四碼需為 4 碼');
@@ -265,11 +257,8 @@ export default function RegistrationApp() {
     const uniqueId = addUserName + addUserLast4;
     const email = encodeName(uniqueId) + FAKE_DOMAIN;
 
-    // 模擬環境下可以直接操作 mockDb
-    // 正式環境下，supabase.auth.signUp 會將當前使用者登出並登入新使用者
-    // 因此在正式版通常建議使用 Admin API，這裡僅做前端演示
     if (process.env.NEXT_PUBLIC_SUPABASE_URL) {
-        alert('注意：正式環境下，此操作會將您目前的管理員帳號登出，並登入新註冊的帳號。\n若要保持登入，需使用 Supabase Admin API。');
+        alert('注意：正式環境下，此操作會導致您(管理員)被登出並登入新帳號。\n若要不登出建立帳號，需使用後端 API。');
     }
 
     const { error } = await supabase.auth.signUp({
@@ -291,12 +280,14 @@ export default function RegistrationApp() {
         setAddUserName('');
         setAddUserLast4('');
         setAddUserPwd('');
-        fetchAllUsers(); // 重新讀取列表
+        fetchAllUsers(); 
+        
+        // 若是正式環境，因為 signUp 會自動登入新用戶，這裡需要重新登入管理員(或提示重新登入)
+        // 模擬環境下則不影響
     }
     setLoading(false);
   };
 
-  // 管理員刪除使用者
   const handleAdminDeleteUser = async (targetId: string) => {
     if (!confirm('確定要刪除此使用者嗎？此動作無法復原！')) return;
     
@@ -305,7 +296,7 @@ export default function RegistrationApp() {
     if (process.env.NEXT_PUBLIC_SUPABASE_URL) {
         alert('提示：由於 Supabase 安全限制，前端無法直接刪除使用者。\n請使用 Supabase Dashboard 進行操作。');
     } else {
-        // @ts-ignore - 模擬環境
+        // @ts-ignore
         if (supabase.auth.admin && supabase.auth.admin.deleteUser) {
              // @ts-ignore
              await supabase.auth.admin.deleteUser(targetId);
@@ -634,7 +625,7 @@ export default function RegistrationApp() {
                     <div key={note.id} className={`bg-white p-5 rounded-xl shadow-sm border transition relative overflow-hidden ${completed ? 'border-gray-200 bg-gray-50/50' : 'border-amber-100 hover:border-amber-300'}`}>
                       {completed && <div className="absolute top-0 right-0 bg-gray-200 text-gray-500 text-xs font-bold px-3 py-1 rounded-bl-lg z-10">已圓滿</div>}
                       <div className="flex justify-between items-start mb-3">
-                         <div className="flex items-center gap-2"><span className={`text-xs px-2 py-1 rounded-full text-white ${note.action_type === '新增' ? 'bg-blue-500' : 'bg-orange-500'}`}>{note.action_type}</span><h4 className={`font-bold text-lg ${completed ? 'text-gray-500' : 'text-amber-900'}`}>{note.team_big} - {note.team_small}</h4></div>
+                         <div className="flex items-center gap-2"><span className={`text-xs px-2 py-1 rounded-full text-white ${note.action_type === '新增' ? 'bg-blue-100 text-blue-800' : 'bg-orange-100 text-orange-800'}`}>{note.action_type}</span><h4 className={`font-bold text-lg ${completed ? 'text-gray-500' : 'text-amber-900'}`}>{note.team_big} - {note.team_small}</h4></div>
                       </div>
                       <div className="text-sm text-gray-700 space-y-2">
                          <div className="grid grid-cols-2 gap-2"><p><span className="text-gray-400">精舍：</span>{note.monastery}</p><p><span className="text-gray-400">姓名：</span>{note.real_name}</p><p><span className="text-gray-400">法名：</span>{note.dharma_name || '-'}</p><p><span className="text-gray-400">協助：</span>{note.need_help ? '是' : '否'}</p></div>
@@ -655,25 +646,30 @@ export default function RegistrationApp() {
                <div className="bg-white p-6 rounded-xl shadow-md border border-red-100">
                  <h3 className="text-lg font-bold text-red-800 mb-4">📋 報名資料管理</h3>
                  <div className="flex flex-col md:flex-row gap-4 items-end md:items-center justify-between mb-4">
-                   <div className="w-full md:w-auto"><label className="block text-sm font-bold text-gray-700 mb-2">篩選月份</label><input type="month" className="w-full p-2 border border-gray-300 rounded-lg text-gray-900" value={filterMonth} onChange={(e) => setFilterMonth(e.target.value)} /></div>
-                   <button onClick={exportToExcel} className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg font-bold shadow-sm transition flex items-center gap-2"><span>📊</span> 匯出 Excel</button>
+                   <div className="w-full md:w-auto"><label className="block text-sm font-bold text-gray-700 mb-2">篩選月份 (發心起日)</label><input type="month" className="w-full p-2 border border-gray-300 rounded-lg text-gray-900" value={filterMonth} onChange={(e) => setFilterMonth(e.target.value)} /></div>
+                   <button onClick={exportToExcel} className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg font-bold shadow-sm transition flex items-center gap-2"><span>📊</span> 匯出 Excel (CSV)</button>
                  </div>
                  <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden overflow-x-auto">
                    <table className="min-w-full divide-y divide-gray-200">
                      <thead className="bg-gray-50">
-                       <tr><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">狀態</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">姓名 (ID)</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">時間</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">備註</th></tr>
+                       <tr><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">狀態</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">大隊/小隊</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">精舍</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">姓名 (ID)</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">法名</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">發心時間</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">協助</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">備註</th></tr>
                      </thead>
                      <tbody className="bg-white divide-y divide-gray-200">
                        {getFilteredNotes().map((note) => (
                          <tr key={note.id} className="hover:bg-gray-50">
                            <td className="px-4 py-4 whitespace-nowrap"><span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${note.action_type === '新增' ? 'bg-blue-100 text-blue-800' : 'bg-orange-100 text-orange-800'}`}>{note.action_type}</span></td>
-                           <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">{note.real_name} <span className="text-gray-400">({note.id_2})</span></td>
-                           <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{note.start_date} {note.start_time}</td>
-                           <td className="px-4 py-4 text-sm text-gray-500 max-w-xs truncate">{note.memo || '-'}</td>
+                           <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">{note.team_big} <span className="text-gray-400">|</span> {note.team_small}</td>
+                           <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">{note.monastery}</td>
+                           <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{note.real_name} <span className="text-xs text-gray-400">({note.id_2})</span></td>
+                           <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{note.dharma_name || '-'}</td>
+                           <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500"><div>{note.start_date} {note.start_time}</div><div className="text-xs text-gray-400">至 {note.end_date} {note.end_time}</div></td>
+                           <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{note.need_help ? '是' : '否'}</td>
+                           <td className="px-4 py-4 text-sm text-gray-500 max-w-xs truncate" title={note.memo}>{note.memo || '-'}</td>
                          </tr>
                        ))}
                      </tbody>
                    </table>
+                   {getFilteredNotes().length === 0 && <div className="p-8 text-center text-gray-500">此月份無資料</div>}
                  </div>
                </div>
 
@@ -701,21 +697,9 @@ export default function RegistrationApp() {
                                     <p className="font-bold text-gray-800">{u.display_name}</p>
                                     <p className="text-xs text-gray-500">ID: {u.id_last4}</p>
                                 </div>
-                                {/* [新增] 刪除按鈕 */}
-                                <button 
-                                    onClick={() => handleAdminDeleteUser(u.id)}
-                                    className="text-gray-400 hover:text-red-500 transition" 
-                                    title="刪除使用者"
-                                >
-                                    🗑️
-                                </button>
+                                <button onClick={() => handleAdminDeleteUser(u.id)} className="text-gray-400 hover:text-red-500 transition" title="刪除使用者">🗑️</button>
                             </div>
-                            <button 
-                                onClick={() => openPwdModal(u)}
-                                className="w-full mt-2 text-xs bg-gray-50 border border-gray-200 text-gray-600 px-3 py-1.5 rounded hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200 transition"
-                            >
-                                修改密碼
-                            </button>
+                            <button onClick={() => openPwdModal(u)} className="w-full mt-2 text-xs bg-gray-50 border border-gray-200 text-gray-600 px-3 py-1.5 rounded hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200 transition">修改密碼</button>
                         </div>
                     )) : (
                         <p className="text-gray-400 text-sm col-span-3 text-center py-4">暫無使用者資料 (需後端 API 支援)</p>
