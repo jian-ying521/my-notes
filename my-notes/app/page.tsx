@@ -3,16 +3,21 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 
 // ==========================================
-// [⚠️ 環境切換說明]
-// 目前預設開啟 [模擬模式] 供線上預覽。
-// 若要部署到 Vercel (正式環境)，請：
-// 1. 確保已安裝: npm install @supabase/supabase-js
-// 2. 解除下方 [A] 的註解
-// 3. 刪除或註解掉 [B]
+// [⚠️ 環境切換說明：請在 VS Code 中閱讀此段]
+//
+// 目前為了讓您在線上能看到畫面，預設開啟 [模擬模式]。
+// 當您要部署到 Vercel 時，請執行以下 3 步驟：
+//
+// 1. 確保終端機已執行安裝: npm install @supabase/supabase-js
+// 2. [解除註解] 下方的「正式連線區塊 (A)」
+// 3. [刪除或註解] 下方的「模擬連線區塊 (B)」(變數宣告請保留)
 // ==========================================
 
+// --- 全域變數宣告 (請保留此處，避免刪除區塊後報錯) ---
+let mockUser: any = null;
+let mockDb: any = undefined; 
 
-// --- [A. 正式連線區塊] ---
+// --- [A. 正式連線區塊] (請在 VS Code 中解除這裡的註解) ---
 /*
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 
@@ -32,6 +37,7 @@ const createClient = () => {
 };
 
 
+
 export default function RegistrationApp() {
   const [notes, setNotes] = useState<any[]>([]);
   const [bulletins, setBulletins] = useState<any[]>([]);
@@ -43,6 +49,7 @@ export default function RegistrationApp() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
+  // 預設登入後進入公告欄
   const [activeTab, setActiveTab] = useState<'form' | 'history' | 'admin' | 'bulletin'>('bulletin');
   const [filterMonth, setFilterMonth] = useState('');
 
@@ -51,16 +58,17 @@ export default function RegistrationApp() {
   const [bulletinImage, setBulletinImage] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // 修改密碼相關
+  // 修改密碼相關 State
   const [showPwdModal, setShowPwdModal] = useState(false);
   const [newPassword, setNewPassword] = useState('');
   const [pwdTargetUser, setPwdTargetUser] = useState<any>(null);
 
-  // 管理員新增使用者相關
+  // 管理員新增使用者相關 State
   const [addUserName, setAddUserName] = useState('');
   const [addUserLast4, setAddUserLast4] = useState('');
   const [addUserPwd, setAddUserPwd] = useState('');
 
+  // 設定管理員帳號
   const ADMIN_ACCOUNT = 'admin'; 
 
   const [formData, setFormData] = useState({
@@ -81,7 +89,7 @@ export default function RegistrationApp() {
   const [supabase] = useState(() => createClient());
   const FAKE_DOMAIN = "@my-notes.com";
 
-  // === 轉碼工具 (Hex) ===
+  // === 轉碼工具 ===
   const encodeName = (name: string) => {
     try {
       let hex = '';
@@ -193,7 +201,6 @@ export default function RegistrationApp() {
 
   const handlePostBulletin = async () => {
     if (!bulletinText && !bulletinImage) return alert('請輸入文字或上傳圖片');
-    
     setLoading(true);
     const { error } = await supabase.from('bulletins').insert([
       { content: bulletinText, image_url: bulletinImage }
@@ -240,7 +247,7 @@ export default function RegistrationApp() {
       if (process.env.NEXT_PUBLIC_SUPABASE_URL) {
           alert('提示：由於 Supabase 安全限制，正式環境中無法在前端直接修改他人密碼。\n請使用 Supabase Dashboard 或後端 API 發送重設信。');
       } else {
-          alert(`[模擬] 已強制修改使用者 ${pwdTargetUser.display_name} 的密碼為 ${newPassword}`);
+          alert(`[模擬] 已強制修改使用者 ${pwdTargetUser.display_name} 的密碼為: ${newPassword}`);
       }
     }
 
@@ -281,21 +288,18 @@ export default function RegistrationApp() {
         setAddUserLast4('');
         setAddUserPwd('');
         fetchAllUsers(); 
-        
-        // 若是正式環境，因為 signUp 會自動登入新用戶，這裡需要重新登入管理員(或提示重新登入)
-        // 模擬環境下則不影響
     }
     setLoading(false);
   };
 
   const handleAdminDeleteUser = async (targetId: string) => {
     if (!confirm('確定要刪除此使用者嗎？此動作無法復原！')) return;
-    
     setLoading(true);
 
     if (process.env.NEXT_PUBLIC_SUPABASE_URL) {
         alert('提示：由於 Supabase 安全限制，前端無法直接刪除使用者。\n請使用 Supabase Dashboard 進行操作。');
     } else {
+        // 模擬環境
         // @ts-ignore
         if (supabase.auth.admin && supabase.auth.admin.deleteUser) {
              // @ts-ignore
@@ -307,10 +311,13 @@ export default function RegistrationApp() {
     setLoading(false);
   };
 
+  // 讀取所有使用者
   const fetchAllUsers = async () => {
-    if (mockDb.users) {
+    // 模擬環境讀 mockDb
+    if (mockDb && mockDb.users) {
         setAllUsers([...mockDb.users]); 
     }
+    // 正式環境暫時不實作讀取所有使用者列表(因需 Admin API)，可顯示提示
   };
 
   const fetchBulletins = async () => {
@@ -333,7 +340,7 @@ export default function RegistrationApp() {
         fetchNotes(user);
         fetchBulletins();
         
-        if (getDisplayNameOnly(user.email || '') === ADMIN_ACCOUNT) {
+        if (getDisplayNameOnly(user.email || '').toLowerCase() === ADMIN_ACCOUNT.toLowerCase()) {
            fetchAllUsers();
         }
       }
@@ -350,11 +357,8 @@ export default function RegistrationApp() {
         // @ts-ignore
         .order('created_at', { ascending: false });
       
-      if (error) {
-        console.error('讀取失敗:', error);
-      } else {
-        if (data) setNotes(data);
-      }
+      if (error) console.error('讀取失敗:', error);
+      else if (data) setNotes(data);
     } catch (err) {
       console.error('連線錯誤:', err);
     }
@@ -479,7 +483,8 @@ export default function RegistrationApp() {
       setFormData(prev => ({ ...prev, real_name: username }));
       fetchNotes(user);
       fetchBulletins();
-      if (username === ADMIN_ACCOUNT) {
+      // 管理員檢查
+      if (username.toLowerCase() === ADMIN_ACCOUNT) {
           fetchAllUsers();
       }
       await recordLogin(uniqueId, '註冊');
@@ -501,7 +506,8 @@ export default function RegistrationApp() {
       setFormData(prev => ({ ...prev, real_name: username }));
       fetchNotes(data.user);
       fetchBulletins();
-      if (username === ADMIN_ACCOUNT) {
+      // 管理員檢查
+      if (username.toLowerCase() === ADMIN_ACCOUNT) {
           fetchAllUsers();
       }
       await recordLogin(uniqueId, '登入');
@@ -551,13 +557,13 @@ export default function RegistrationApp() {
               <div className="flex flex-col">
                 <span className="text-gray-700 font-medium flex items-center gap-2">
                    嗨，{getDisplayNameOnly(user.email || '')} 
-                   {isAdmin && <span className="bg-red-500 text-white text-xs px-2 py-0.5 rounded-full">管理員</span>}
+                   {isAdmin ? <span className="bg-red-500 text-white text-xs px-2 py-0.5 rounded-full">管理員</span> : <span className="bg-gray-200 text-gray-600 text-xs px-2 py-0.5 rounded-full">一般使用者</span>}
                 </span>
                 <span className="text-xs text-gray-400">ID: {decodeName(user.email || '').slice(-4)}</span>
               </div>
             </div>
             <div className="flex gap-2">
-                <button onClick={() => openPwdModal('SELF')} className="text-sm text-blue-600 hover:text-blue-800 px-3 py-1 rounded-md hover:bg-blue-50 transition">🔑 修改密碼</button>
+                <button onClick={() => openPwdModal('SELF')} className="text-sm bg-blue-50 text-blue-600 hover:text-blue-800 border border-blue-200 px-3 py-1 rounded-md hover:bg-blue-100 transition shadow-sm font-bold">🔑 修改密碼</button>
                 <button onClick={handleLogout} className="text-sm text-gray-500 hover:text-red-500 px-3 py-1 rounded-md hover:bg-red-50 transition">登出</button>
             </div>
           </div>
@@ -646,30 +652,25 @@ export default function RegistrationApp() {
                <div className="bg-white p-6 rounded-xl shadow-md border border-red-100">
                  <h3 className="text-lg font-bold text-red-800 mb-4">📋 報名資料管理</h3>
                  <div className="flex flex-col md:flex-row gap-4 items-end md:items-center justify-between mb-4">
-                   <div className="w-full md:w-auto"><label className="block text-sm font-bold text-gray-700 mb-2">篩選月份 (發心起日)</label><input type="month" className="w-full p-2 border border-gray-300 rounded-lg text-gray-900" value={filterMonth} onChange={(e) => setFilterMonth(e.target.value)} /></div>
+                   <div className="w-full md:w-auto"><label className="block text-sm font-bold text-gray-700 mb-2">篩選月份</label><input type="month" className="w-full p-2 border border-gray-300 rounded-lg text-gray-900" value={filterMonth} onChange={(e) => setFilterMonth(e.target.value)} /></div>
                    <button onClick={exportToExcel} className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg font-bold shadow-sm transition flex items-center gap-2"><span>📊</span> 匯出 Excel (CSV)</button>
                  </div>
                  <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden overflow-x-auto">
                    <table className="min-w-full divide-y divide-gray-200">
                      <thead className="bg-gray-50">
-                       <tr><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">狀態</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">大隊/小隊</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">精舍</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">姓名 (ID)</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">法名</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">發心時間</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">協助</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">備註</th></tr>
+                       <tr><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">狀態</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">姓名 (ID)</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">時間</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">備註</th></tr>
                      </thead>
                      <tbody className="bg-white divide-y divide-gray-200">
                        {getFilteredNotes().map((note) => (
                          <tr key={note.id} className="hover:bg-gray-50">
                            <td className="px-4 py-4 whitespace-nowrap"><span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${note.action_type === '新增' ? 'bg-blue-100 text-blue-800' : 'bg-orange-100 text-orange-800'}`}>{note.action_type}</span></td>
-                           <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">{note.team_big} <span className="text-gray-400">|</span> {note.team_small}</td>
-                           <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">{note.monastery}</td>
-                           <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{note.real_name} <span className="text-xs text-gray-400">({note.id_2})</span></td>
-                           <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{note.dharma_name || '-'}</td>
-                           <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500"><div>{note.start_date} {note.start_time}</div><div className="text-xs text-gray-400">至 {note.end_date} {note.end_time}</div></td>
-                           <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{note.need_help ? '是' : '否'}</td>
-                           <td className="px-4 py-4 text-sm text-gray-500 max-w-xs truncate" title={note.memo}>{note.memo || '-'}</td>
+                           <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">{note.real_name} <span className="text-gray-400">({note.id_2})</span></td>
+                           <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{note.start_date} {note.start_time}</td>
+                           <td className="px-4 py-4 text-sm text-gray-500 max-w-xs truncate">{note.memo || '-'}</td>
                          </tr>
                        ))}
                      </tbody>
                    </table>
-                   {getFilteredNotes().length === 0 && <div className="p-8 text-center text-gray-500">此月份無資料</div>}
                  </div>
                </div>
 
@@ -697,9 +698,21 @@ export default function RegistrationApp() {
                                     <p className="font-bold text-gray-800">{u.display_name}</p>
                                     <p className="text-xs text-gray-500">ID: {u.id_last4}</p>
                                 </div>
-                                <button onClick={() => handleAdminDeleteUser(u.id)} className="text-gray-400 hover:text-red-500 transition" title="刪除使用者">🗑️</button>
+                                {/* [新增] 刪除按鈕 */}
+                                <button 
+                                    onClick={() => handleAdminDeleteUser(u.id)}
+                                    className="text-gray-400 hover:text-red-500 transition" 
+                                    title="刪除使用者"
+                                >
+                                    🗑️
+                                </button>
                             </div>
-                            <button onClick={() => openPwdModal(u)} className="w-full mt-2 text-xs bg-gray-50 border border-gray-200 text-gray-600 px-3 py-1.5 rounded hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200 transition">修改密碼</button>
+                            <button 
+                                onClick={() => openPwdModal(u)}
+                                className="w-full mt-2 text-xs bg-gray-50 border border-gray-200 text-gray-600 px-3 py-1.5 rounded hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200 transition"
+                            >
+                                修改密碼
+                            </button>
                         </div>
                     )) : (
                         <p className="text-gray-400 text-sm col-span-3 text-center py-4">暫無使用者資料 (需後端 API 支援)</p>
