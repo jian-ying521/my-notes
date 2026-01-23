@@ -14,7 +14,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 // ==========================================
 
 
-// --- [A. 正式連線區塊] (請在 VS Code 解除這段的註解 //) ---
+// --- [A. 正式連線區塊] (請在 VS Code 中解除這裡的註解) ---
 /*
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 
@@ -32,8 +32,6 @@ const createClient = () => {
   const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
   return createSupabaseClient(supabaseUrl, supabaseKey);
 };
-
-
 
 
 export default function RegistrationApp() {
@@ -56,16 +54,17 @@ export default function RegistrationApp() {
   const [bulletinImage, setBulletinImage] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // 修改密碼相關
+  // 修改密碼相關 State
   const [showPwdModal, setShowPwdModal] = useState(false);
   const [newPassword, setNewPassword] = useState('');
   const [pwdTargetUser, setPwdTargetUser] = useState<any>(null);
 
-  // 管理員新增使用者相關
+  // 管理員新增使用者相關 State
   const [addUserName, setAddUserName] = useState('');
   const [addUserLast4, setAddUserLast4] = useState('');
   const [addUserPwd, setAddUserPwd] = useState('');
 
+  // 設定管理員帳號
   const ADMIN_ACCOUNT = 'admin'; 
 
   const [formData, setFormData] = useState({
@@ -231,6 +230,7 @@ export default function RegistrationApp() {
     setLoading(false);
   };
 
+  // 修改密碼 (包含一般使用者與管理員強制修改)
   const handleChangePassword = async () => {
     if (!newPassword || newPassword.length < 6) {
       return alert('密碼長度需至少 6 碼');
@@ -243,8 +243,10 @@ export default function RegistrationApp() {
       else alert('密碼修改成功！');
     } else {
       if (process.env.NEXT_PUBLIC_SUPABASE_URL) {
-          alert('提示：由於安全限制，正式環境中無法在前端直接修改他人密碼。\n請使用 Supabase Dashboard 或後端 API 進行操作。');
+          // 正式環境提示
+          alert('提示：由於 Supabase 安全限制，前端無法直接修改他人密碼。\n請使用 Supabase Dashboard 或後端 API 發送重設信。');
       } else {
+          // 模擬環境
           alert(`[模擬] 已強制修改使用者 ${pwdTargetUser.display_name} 的密碼為 ${newPassword}`);
       }
     }
@@ -254,6 +256,7 @@ export default function RegistrationApp() {
     setNewPassword('');
   };
 
+  // 管理員新增使用者
   const handleAdminAddUser = async () => {
     if(!addUserName || !addUserLast4 || !addUserPwd) return alert('請輸入完整資料');
     if(addUserLast4.length !== 4) return alert('ID 後四碼需為 4 碼');
@@ -262,8 +265,11 @@ export default function RegistrationApp() {
     const uniqueId = addUserName + addUserLast4;
     const email = encodeName(uniqueId) + FAKE_DOMAIN;
 
+    // 模擬環境下可以直接操作 mockDb
+    // 正式環境下，supabase.auth.signUp 會將當前使用者登出並登入新使用者
+    // 因此在正式版通常建議使用 Admin API，這裡僅做前端演示
     if (process.env.NEXT_PUBLIC_SUPABASE_URL) {
-        alert('提示：正式環境下，若使用此功能會將當前管理員登出並登入新帳號。\n若要不登出建立帳號，需使用後端 API (Supabase Admin SDK)。\n\n(目前操作將會模擬註冊流程)');
+        alert('注意：正式環境下，此操作會將您目前的管理員帳號登出，並登入新註冊的帳號。\n若要保持登入，需使用 Supabase Admin API。');
     }
 
     const { error } = await supabase.auth.signUp({
@@ -281,24 +287,25 @@ export default function RegistrationApp() {
     if (error) {
         alert('新增失敗：' + error.message);
     } else {
-        alert(`使用者 ${addUserName} 已建立！(模擬環境中列表已更新)`);
+        alert(`使用者 ${addUserName} 已建立！`);
         setAddUserName('');
         setAddUserLast4('');
         setAddUserPwd('');
-        fetchAllUsers();
+        fetchAllUsers(); // 重新讀取列表
     }
     setLoading(false);
   };
 
+  // 管理員刪除使用者
   const handleAdminDeleteUser = async (targetId: string) => {
     if (!confirm('確定要刪除此使用者嗎？此動作無法復原！')) return;
     
     setLoading(true);
 
     if (process.env.NEXT_PUBLIC_SUPABASE_URL) {
-        alert('提示：由於安全限制，正式環境中無法在前端直接刪除使用者。\n請使用 Supabase Dashboard 或後端 API (supabase.auth.admin.deleteUser) 進行操作。');
+        alert('提示：由於 Supabase 安全限制，前端無法直接刪除使用者。\n請使用 Supabase Dashboard 進行操作。');
     } else {
-        // @ts-ignore
+        // @ts-ignore - 模擬環境
         if (supabase.auth.admin && supabase.auth.admin.deleteUser) {
              // @ts-ignore
              await supabase.auth.admin.deleteUser(targetId);
