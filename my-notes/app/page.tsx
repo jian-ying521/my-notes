@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-// 引入 Supabase 套件 (請確保終端機已執行 npm install @supabase/supabase-js)
+// 1. 引入 Supabase 套件
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 
 // ==========================================
@@ -46,7 +46,9 @@ export default function RegistrationApp() {
     memo: ''
   });
   
-  const supabase = createClient();
+  // 建立 Supabase 客戶端實例
+  // 使用 useState 確保只建立一次，避免重複連線
+  const [supabase] = useState(() => createClient());
   const FAKE_DOMAIN = "@my-notes.com";
 
   // === 轉碼工具 (處理中文帳號) ===
@@ -100,7 +102,7 @@ export default function RegistrationApp() {
       if (error) {
         console.error('讀取失敗:', error);
         // 若使用者已登入卻讀不到，顯示錯誤
-        if (user) alert('無法讀取歷史紀錄：' + error.message);
+        if (user) alert('讀取失敗 (請檢查Supabase欄位是否建立)：' + error.message);
       } else {
         if (data) setNotes(data);
       }
@@ -157,7 +159,7 @@ export default function RegistrationApp() {
       fetchNotes();
       setActiveTab('history'); // 自動切換到歷史紀錄頁籤
     } else {
-      alert('寫入失敗：' + error.message + '\n(請檢查 Supabase 是否已建立所有新欄位)');
+      alert('寫入失敗：' + error.message + '\n(建議檢查 Supabase 是否有缺漏的欄位)');
     }
   };
 
