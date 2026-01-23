@@ -10,7 +10,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 //
 // 1. 確保終端機已執行安裝: npm install @supabase/supabase-js
 // 2. [解除註解] 下方的「正式連線區塊 (A)」
-// 3. [刪除或註解] 下方的「模擬連線區塊 (B)」(變數宣告請保留)
+// 3. [刪除] 下方的「模擬連線區塊 (B)」的內容 (但請保留最上方的變數宣告)
 // ==========================================
 
 // --- 全域變數宣告 (請保留此處，避免刪除區塊後報錯) ---
@@ -49,8 +49,7 @@ export default function RegistrationApp() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // 預設登入後進入公告欄
-  const [activeTab, setActiveTab] = useState<'form' | 'history' | 'admin' | 'bulletin'>('bulletin');
+  const [activeTab, setActiveTab] = useState<'form' | 'history' | 'admin_data' | 'admin_users' | 'bulletin'>('bulletin');
   const [filterMonth, setFilterMonth] = useState('');
 
   // 公告欄位
@@ -299,7 +298,6 @@ export default function RegistrationApp() {
     if (process.env.NEXT_PUBLIC_SUPABASE_URL) {
         alert('提示：由於 Supabase 安全限制，前端無法直接刪除使用者。\n請使用 Supabase Dashboard 進行操作。');
     } else {
-        // 模擬環境
         // @ts-ignore
         if (supabase.auth.admin && supabase.auth.admin.deleteUser) {
              // @ts-ignore
@@ -313,11 +311,9 @@ export default function RegistrationApp() {
 
   // 讀取所有使用者
   const fetchAllUsers = async () => {
-    // 模擬環境讀 mockDb
     if (mockDb && mockDb.users) {
         setAllUsers([...mockDb.users]); 
     }
-    // 正式環境暫時不實作讀取所有使用者列表(因需 Admin API)，可顯示提示
   };
 
   const fetchBulletins = async () => {
@@ -557,7 +553,7 @@ export default function RegistrationApp() {
               <div className="flex flex-col">
                 <span className="text-gray-700 font-medium flex items-center gap-2">
                    嗨，{getDisplayNameOnly(user.email || '')} 
-                   {isAdmin ? <span className="bg-red-500 text-white text-xs px-2 py-0.5 rounded-full">管理員</span> : <span className="bg-gray-200 text-gray-600 text-xs px-2 py-0.5 rounded-full">一般使用者</span>}
+                   {isAdmin && <span className="bg-red-500 text-white text-xs px-2 py-0.5 rounded-full">管理員</span>}
                 </span>
                 <span className="text-xs text-gray-400">ID: {decodeName(user.email || '').slice(-4)}</span>
               </div>
@@ -572,7 +568,32 @@ export default function RegistrationApp() {
             <button onClick={() => setActiveTab('bulletin')} className={`flex-1 py-3 px-2 whitespace-nowrap rounded-md font-bold transition-all ${activeTab === 'bulletin' ? 'bg-white text-amber-800 shadow-sm' : 'text-amber-600 hover:bg-amber-200/50'}`}>📢 公告欄</button>
             <button onClick={() => setActiveTab('form')} className={`flex-1 py-3 px-2 whitespace-nowrap rounded-md font-bold transition-all ${activeTab === 'form' ? 'bg-white text-amber-800 shadow-sm' : 'text-amber-600 hover:bg-amber-200/50'}`}>📝 我要報名</button>
             <button onClick={() => setActiveTab('history')} className={`flex-1 py-3 px-2 whitespace-nowrap rounded-md font-bold transition-all ${activeTab === 'history' ? 'bg-white text-amber-800 shadow-sm' : 'text-amber-600 hover:bg-amber-200/50'}`}>📋 我的紀錄</button>
-            {isAdmin && <button onClick={() => setActiveTab('admin')} className={`flex-1 py-3 px-2 whitespace-nowrap rounded-md font-bold transition-all ${activeTab === 'admin' ? 'bg-red-50 text-red-800 shadow-sm border border-red-200' : 'text-red-600 hover:bg-red-50/50'}`}>🔧 系統管理員</button>}
+            
+            {/* 管理員功能 - 拆分為兩個獨立按鈕 */}
+            {isAdmin && (
+              <>
+                <button 
+                  onClick={() => setActiveTab('admin_data')} 
+                  className={`flex-1 py-3 px-2 whitespace-nowrap rounded-md font-bold transition-all ${
+                    activeTab === 'admin_data' 
+                      ? 'bg-red-50 text-red-800 shadow-sm border border-red-200' 
+                      : 'text-red-600 hover:bg-red-50/50'
+                  }`}
+                >
+                  📊 全部報名資料
+                </button>
+                <button 
+                  onClick={() => setActiveTab('admin_users')} 
+                  className={`flex-1 py-3 px-2 whitespace-nowrap rounded-md font-bold transition-all ${
+                    activeTab === 'admin_users' 
+                      ? 'bg-blue-50 text-blue-800 shadow-sm border border-blue-200' 
+                      : 'text-blue-600 hover:bg-blue-50/50'
+                  }`}
+                >
+                  👥 使用者
+                </button>
+              </>
+            )}
           </div>
 
           {activeTab === 'bulletin' && (
@@ -647,12 +668,13 @@ export default function RegistrationApp() {
             </div>
           )}
 
-          {activeTab === 'admin' && isAdmin && (
+          {/* === [修改] 頁籤內容：全部報名資料 (管理員) === */}
+          {activeTab === 'admin_data' && isAdmin && (
              <div className="space-y-6 animate-fade-in">
                <div className="bg-white p-6 rounded-xl shadow-md border border-red-100">
-                 <h3 className="text-lg font-bold text-red-800 mb-4">📋 報名資料管理</h3>
+                 <h3 className="text-lg font-bold text-red-800 mb-4">📋 全部報名資料</h3>
                  <div className="flex flex-col md:flex-row gap-4 items-end md:items-center justify-between mb-4">
-                   <div className="w-full md:w-auto"><label className="block text-sm font-bold text-gray-700 mb-2">篩選月份</label><input type="month" className="w-full p-2 border border-gray-300 rounded-lg text-gray-900" value={filterMonth} onChange={(e) => setFilterMonth(e.target.value)} /></div>
+                   <div className="w-full md:w-auto"><label className="block text-sm font-bold text-gray-700 mb-2">篩選月份 (發心起日)</label><input type="month" className="w-full p-2 border border-gray-300 rounded-lg text-gray-900" value={filterMonth} onChange={(e) => setFilterMonth(e.target.value)} /></div>
                    <button onClick={exportToExcel} className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg font-bold shadow-sm transition flex items-center gap-2"><span>📊</span> 匯出 Excel (CSV)</button>
                  </div>
                  <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden overflow-x-auto">
@@ -673,10 +695,14 @@ export default function RegistrationApp() {
                    </table>
                  </div>
                </div>
+             </div>
+          )}
 
-               {/* [新增] 成員管理區塊：新增/刪除使用者 */}
+          {/* === [新增] 頁籤內容：使用者管理 (管理員) === */}
+          {activeTab === 'admin_users' && isAdmin && (
+             <div className="space-y-6 animate-fade-in">
                <div className="bg-white p-6 rounded-xl shadow-md border border-blue-100">
-                 <h3 className="text-lg font-bold text-blue-800 mb-4">👥 成員管理 (新增/刪除/改密碼)</h3>
+                 <h3 className="text-lg font-bold text-blue-800 mb-4">👥 使用者管理</h3>
                  
                  {/* 新增使用者表單 */}
                  <div className="bg-blue-50 p-4 rounded-lg mb-6 border border-blue-200">
@@ -698,21 +724,9 @@ export default function RegistrationApp() {
                                     <p className="font-bold text-gray-800">{u.display_name}</p>
                                     <p className="text-xs text-gray-500">ID: {u.id_last4}</p>
                                 </div>
-                                {/* [新增] 刪除按鈕 */}
-                                <button 
-                                    onClick={() => handleAdminDeleteUser(u.id)}
-                                    className="text-gray-400 hover:text-red-500 transition" 
-                                    title="刪除使用者"
-                                >
-                                    🗑️
-                                </button>
+                                <button onClick={() => handleAdminDeleteUser(u.id)} className="text-gray-400 hover:text-red-500 transition" title="刪除使用者">🗑️</button>
                             </div>
-                            <button 
-                                onClick={() => openPwdModal(u)}
-                                className="w-full mt-2 text-xs bg-gray-50 border border-gray-200 text-gray-600 px-3 py-1.5 rounded hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200 transition"
-                            >
-                                修改密碼
-                            </button>
+                            <button onClick={() => openPwdModal(u)} className="w-full mt-2 text-xs bg-gray-50 border border-gray-200 text-gray-600 px-3 py-1.5 rounded hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200 transition">修改密碼</button>
                         </div>
                     )) : (
                         <p className="text-gray-400 text-sm col-span-3 text-center py-4">暫無使用者資料 (需後端 API 支援)</p>
