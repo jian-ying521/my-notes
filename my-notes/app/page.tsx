@@ -77,10 +77,17 @@ export default function RegistrationApp() {
   const [supabase] = useState(() => createClient());
   const FAKE_DOMAIN = "@my-notes.com";
 
-  // === 轉碼工具 ===
+  // === [修正] 轉碼工具 (改用 16 進位 Hex 編碼) ===
+  // 解決 Base64 大小寫敏感導致的亂碼問題
   const encodeName = (name: string) => {
     try {
-      return btoa(encodeURIComponent(name)).replace(/=/g, '');
+      let hex = '';
+      for (let i = 0; i < name.length; i++) {
+        // 將每個字轉為 4 位數的 16 進位碼 (例如 "小" -> "5c0f")
+        const char = name.charCodeAt(i).toString(16);
+        hex += ('0000' + char).slice(-4);
+      }
+      return hex;
     } catch {
       return name;
     }
@@ -88,8 +95,14 @@ export default function RegistrationApp() {
 
   const decodeName = (email: string) => {
     try {
-      const namePart = email.split('@')[0];
-      return decodeURIComponent(atob(namePart));
+      // 取出 @ 前面的 hex 字串
+      const hex = email.split('@')[0];
+      let str = '';
+      // 每 4 個字元轉回一個中文字
+      for (let i = 0; i < hex.length; i += 4) {
+        str += String.fromCharCode(parseInt(hex.substr(i, 4), 16));
+      }
+      return str;
     } catch {
       return email ? email.split('@')[0] : '使用者';
     }
