@@ -24,6 +24,7 @@ const createClient = () => {
   return createSupabaseClient(supabaseUrl, supabaseKey);
 };
 */
+
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 
 const createClient = () => {
@@ -31,6 +32,7 @@ const createClient = () => {
   const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
   return createSupabaseClient(supabaseUrl, supabaseKey);
 };
+
 
 
 export default function CheckPage() {
@@ -47,18 +49,31 @@ export default function CheckPage() {
   const [supabase] = useState(() => createClient());
   const FAKE_DOMAIN = "@my-notes.com";
 
-  // === 轉碼工具 ===
+  // === [修正] 轉碼工具 (與主頁面同步使用 Hex) ===
   const encodeName = (name: string) => {
     try {
-      return btoa(encodeURIComponent(name)).replace(/=/g, '');
-    } catch { return name; }
+      let hex = '';
+      for (let i = 0; i < name.length; i++) {
+        const char = name.charCodeAt(i).toString(16);
+        hex += ('0000' + char).slice(-4);
+      }
+      return hex;
+    } catch {
+      return name;
+    }
   };
 
   const decodeName = (email: string) => {
     try {
-      const namePart = email.split('@')[0];
-      return decodeURIComponent(atob(namePart));
-    } catch { return email ? email.split('@')[0] : '使用者'; }
+      const hex = email.split('@')[0];
+      let str = '';
+      for (let i = 0; i < hex.length; i += 4) {
+        str += String.fromCharCode(parseInt(hex.substr(i, 4), 16));
+      }
+      return str;
+    } catch {
+      return email ? email.split('@')[0] : '使用者';
+    }
   };
 
   // 判斷是否過期
@@ -128,35 +143,35 @@ export default function CheckPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-100 flex flex-col items-center justify-center py-10 px-4 font-sans text-gray-900">
+    <div className="min-h-screen bg-amber-50 flex flex-col items-center justify-center py-10 px-4 font-sans text-gray-900">
       
       {/* 頁面標題 */}
       <div className="mb-8 text-center">
-        <h1 className="text-3xl font-bold text-slate-800 tracking-wide">個人報名紀錄查詢</h1>
-        <p className="text-slate-500 mt-2">請輸入您的資料以查詢登記狀態</p>
+        <h1 className="text-3xl font-bold text-amber-900 tracking-wide">個人報名紀錄查詢</h1>
+        <p className="text-amber-700 mt-2">請輸入您的資料以查詢登記狀態</p>
       </div>
 
       {!user ? (
         // === 登入區塊 ===
-        <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-sm border border-slate-200">
+        <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-sm border border-amber-200">
           <div className="space-y-5">
             <div>
-              <label className="block text-sm font-bold text-slate-700 mb-1">姓名 (帳號)</label>
+              <label className="block text-sm font-bold text-gray-700 mb-1">姓名 (帳號)</label>
               <input
                 type="text"
                 placeholder="請輸入註冊時的姓名"
-                className="w-full p-3 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
+                className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 text-gray-900"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
               />
             </div>
             <div>
-              <label className="block text-sm font-bold text-slate-700 mb-1">密碼</label>
+              <label className="block text-sm font-bold text-gray-700 mb-1">密碼</label>
               <input
                 type="password"
                 placeholder="請輸入密碼"
-                className="w-full p-3 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
+                className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 text-gray-900"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
@@ -170,14 +185,14 @@ export default function CheckPage() {
             <button 
               onClick={handleLogin}
               disabled={loading}
-              className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold hover:bg-blue-700 transition shadow-md disabled:bg-slate-400"
+              className="w-full bg-amber-700 text-white py-3 rounded-lg font-bold hover:bg-amber-800 transition shadow-md disabled:bg-gray-400"
             >
               {loading ? '查詢中...' : '登入查詢'}
             </button>
           </div>
           
           <div className="mt-6 text-center">
-            <a href="/" className="text-sm text-slate-400 hover:text-blue-600 underline">
+            <a href="/" className="text-sm text-gray-400 hover:text-amber-700 underline">
               回首頁報名
             </a>
             <p className="mt-4 text-xs text-gray-400">*預覽模式：使用模擬資料 (請依檔案說明切換為正式版)</p>
@@ -187,9 +202,9 @@ export default function CheckPage() {
         // === 資料顯示區塊 ===
         <div className="w-full max-w-3xl animate-fade-in">
           
-          <div className="flex justify-between items-center mb-6 bg-white p-4 rounded-xl shadow-sm border border-slate-200">
-            <span className="text-slate-700 font-medium">
-              查詢對象：<span className="text-blue-600 font-bold text-lg">{decodeName(user.email || '')}</span>
+          <div className="flex justify-between items-center mb-6 bg-white p-4 rounded-xl shadow-sm border border-amber-200">
+            <span className="text-gray-700 font-medium">
+              查詢對象：<span className="text-amber-700 font-bold text-lg">{decodeName(user.email || '')}</span>
             </span>
             <button 
               onClick={handleLogout}
@@ -204,7 +219,7 @@ export default function CheckPage() {
               notes.map((note) => {
                 const completed = isExpired(note.end_date, note.end_time);
                 return (
-                  <div key={note.id} className={`bg-white p-6 rounded-xl shadow-sm border relative overflow-hidden transition ${completed ? 'border-gray-200 bg-gray-50' : 'border-blue-200 hover:shadow-md'}`}>
+                  <div key={note.id} className={`bg-white p-6 rounded-xl shadow-sm border relative overflow-hidden transition ${completed ? 'border-gray-200 bg-gray-50/50' : 'border-amber-100 hover:border-amber-300'}`}>
                     
                     {/* 狀態標籤 */}
                     <div className="absolute top-0 right-0">
@@ -218,13 +233,13 @@ export default function CheckPage() {
                     </div>
 
                     <div className="mb-4">
-                      <h3 className={`text-xl font-bold mb-1 ${completed ? 'text-gray-500' : 'text-slate-800'}`}>
+                      <h3 className={`text-xl font-bold mb-1 ${completed ? 'text-gray-500' : 'text-amber-900'}`}>
                         {note.team_big} <span className="text-sm font-normal text-gray-500">| {note.team_small}</span>
                       </h3>
                       <p className="text-sm text-gray-500">精舍地點：{note.monastery}</p>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm bg-slate-50 p-4 rounded-lg">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm bg-amber-50/50 p-4 rounded-lg">
                       <div>
                         <p className="text-gray-400 mb-1">發心時間</p>
                         <p className="font-medium text-gray-700">
@@ -240,17 +255,17 @@ export default function CheckPage() {
                       </div>
                     </div>
 
-                    <div className="mt-4 pt-3 border-t border-slate-100 flex justify-between items-end">
-                      <span className="text-xs text-slate-300">ID: {note.id}</span>
-                      <span className="text-xs text-slate-400">登記日期：{new Date(note.created_at).toLocaleDateString()}</span>
+                    <div className="mt-4 pt-3 border-t border-amber-50 flex justify-between items-end">
+                      <span className="text-xs text-gray-300">ID: {note.id}</span>
+                      <span className="text-xs text-gray-400">登記日期：{new Date(note.created_at).toLocaleDateString()}</span>
                     </div>
                   </div>
                 );
               })
             ) : (
-              <div className="text-center py-16 bg-white/50 rounded-xl border border-dashed border-slate-300">
-                <p className="text-slate-500 text-lg">查無此帳號的報名紀錄</p>
-                <p className="text-slate-400 text-sm mt-2">請確認是否已完成報名</p>
+              <div className="text-center py-16 bg-white/50 rounded-xl border border-dashed border-amber-200">
+                <p className="text-gray-500 text-lg">查無此帳號的報名紀錄</p>
+                <p className="text-gray-400 text-sm mt-2">請確認是否已完成報名</p>
               </div>
             )}
           </div>
