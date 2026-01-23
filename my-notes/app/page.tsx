@@ -71,7 +71,7 @@ export default function RegistrationApp() {
     memo: ''
   });
   
-  // 建立 Supabase 客戶端
+  // 建立 Supabase 客戶端實例
   const [supabase] = useState(() => createClient());
   const FAKE_DOMAIN = "@my-notes.com";
 
@@ -105,6 +105,7 @@ export default function RegistrationApp() {
   // 取得純姓名 (移除後四碼)
   const getDisplayNameOnly = (email: string) => {
     const fullName = decodeName(email);
+    // 假設後四碼是最後4個字元，且為數字
     if (fullName.length > 4 && !isNaN(Number(fullName.slice(-4)))) {
       return fullName.slice(0, -4);
     }
@@ -143,18 +144,11 @@ export default function RegistrationApp() {
   }, []);
 
   const fetchNotes = async (targetUser: any = user) => {
-    if (!targetUser || !targetUser.email) return;
-
-    const queryName = getDisplayNameOnly(targetUser.email);
-    const queryID2 = getIdLast4FromEmail(targetUser.email);
-
     try {
       // @ts-ignore
       const { data, error } = await supabase
         .from('notes')
         .select('*')
-        .eq('real_name', queryName)
-        .eq('id_2', queryID2)
         // @ts-ignore
         .order('created_at', { ascending: false });
       
