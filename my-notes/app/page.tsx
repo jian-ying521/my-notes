@@ -143,6 +143,7 @@ export default function RegistrationApp() {
     getUser();
   }, []);
 
+  // === 移除手動過濾，依賴 RLS ===
   const fetchNotes = async (targetUser: any = user) => {
     try {
       // @ts-ignore
