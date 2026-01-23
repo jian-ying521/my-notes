@@ -21,6 +21,11 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 const createClient = () => {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
   const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+  
+  if (!supabaseUrl || !supabaseKey) {
+    console.warn('警告：找不到 Supabase 環境變數，請檢查 Vercel 設定。');
+  }
+
   return createSupabaseClient(supabaseUrl, supabaseKey);
 };
 */
@@ -30,6 +35,11 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 const createClient = () => {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
   const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+  
+  if (!supabaseUrl || !supabaseKey) {
+    console.warn('警告：找不到 Supabase 環境變數，請檢查 Vercel 設定。');
+  }
+
   return createSupabaseClient(supabaseUrl, supabaseKey);
 };
 
