@@ -44,9 +44,13 @@ export default function RegistrationApp() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const [activeTab, setActiveTab] = useState<'form' | 'history'>('form');
+  // [修改] 增加 'admin' 頁籤
+  const [activeTab, setActiveTab] = useState<'form' | 'history' | 'admin'>('form');
 
-  // [新增] 設定管理員帳號 (您可以修改這裡的名稱)
+  // [新增] 管理員篩選月份
+  const [filterMonth, setFilterMonth] = useState('');
+
+  // 設定管理員帳號 (顯示名稱為 admin 的人擁有權限)
   const ADMIN_ACCOUNT = 'admin'; 
 
   const [formData, setFormData] = useState({
@@ -122,6 +126,63 @@ export default function RegistrationApp() {
   // 判斷當前使用者是否為管理員
   const isAdmin = user ? getDisplayNameOnly(user.email || '') === ADMIN_ACCOUNT : false;
 
+  // [新增] 匯出 Excel (CSV) 功能
+  const exportToExcel = () => {
+    // 取得目前篩選後的資料
+    const dataToExport = getFilteredNotes();
+    
+    if (dataToExport.length === 0) {
+      alert("目前沒有資料可匯出");
+      return;
+    }
+
+    // 定義 CSV 標頭
+    const headers = [
+      "大隊", "小隊", "精舍", "姓名", "身分證後四碼", "法名", "動作", 
+      "開始日期", "開始時間", "結束日期", "結束時間", "需協助", "備註", "登記時間"
+    ];
+
+    // 轉換資料為 CSV 格式
+    const csvRows = [
+      headers.join(','), // 標題列
+      ...dataToExport.map(note => [
+        note.team_big,
+        note.team_small,
+        note.monastery,
+        note.real_name,
+        note.id_2 || '',
+        note.dharma_name || '',
+        note.action_type,
+        note.start_date,
+        note.start_time,
+        note.end_date,
+        note.end_time,
+        note.need_help ? '是' : '否',
+        `"${(note.memo || '').replace(/"/g, '""')}"`, // 處理備註中的逗號
+        new Date(note.created_at).toLocaleDateString()
+      ].join(','))
+    ];
+
+    const csvString = csvRows.join('\n');
+    // 加入 BOM 以確保 Excel 能正確顯示中文
+    const blob = new Blob(["\ufeff" + csvString], { type: 'text/csv;charset=utf-8;' });
+    
+    // 建立下載連結
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `報名資料匯出_${filterMonth || '全部'}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // [新增] 篩選邏輯
+  const getFilteredNotes = () => {
+    if (!filterMonth) return notes; // 沒選月份就回傳全部
+    return notes.filter(note => note.start_date && note.start_date.startsWith(filterMonth));
+  };
+
   useEffect(() => {
     const getUser = async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -137,8 +198,7 @@ export default function RegistrationApp() {
 
   const fetchNotes = async (targetUser: any = user) => {
     try {
-      // 這裡不需要改程式碼，因為如果 Supabase RLS 設定正確
-      // 管理員自然會讀到所有資料，普通人只讀得到自己的
+      // 這裡如果 Supabase RLS 設定正確，管理員會抓到所有人資料，普通人只抓到自己的
       // @ts-ignore
       const { data, error } = await supabase
         .from('notes')
@@ -296,7 +356,7 @@ export default function RegistrationApp() {
               <input
                 type="text"
                 maxLength={4}
-                placeholder="例如：1234"
+                placeholder="例如：1234 (避免同名混淆)"
                 value={idLast4}
                 className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 text-gray-900"
                 onChange={(e) => setIdLast4(e.target.value)}
@@ -334,11 +394,11 @@ export default function RegistrationApp() {
           </p>
         </div>
       ) : (
-        <div className="w-full max-w-4xl animate-fade-in">
+        <div className="w-full max-w-6xl animate-fade-in">
           {/* Header & Logout */}
           <div className="flex justify-between items-center mb-6 bg-white p-4 rounded-xl shadow-sm border border-amber-100">
             <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-amber-100 rounded-full flex items-center justify-center text-amber-800 font-bold">
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold ${isAdmin ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-800'}`}>
                 {(getDisplayNameOnly(user.email || '') || 'U')[0]}
               </div>
               <div className="flex flex-col">
@@ -377,8 +437,22 @@ export default function RegistrationApp() {
                   : 'text-amber-600 hover:bg-amber-200/50'
               }`}
             >
-              {isAdmin ? '📂 所有報名紀錄 (管理員)' : '📋 歷史登記紀錄'}
+              📋 我的紀錄
             </button>
+            
+            {/* [新增] 只有管理員才看得到的頁籤 */}
+            {isAdmin && (
+              <button
+                onClick={() => setActiveTab('admin')}
+                className={`flex-1 py-3 rounded-md font-bold transition-all ${
+                  activeTab === 'admin' 
+                    ? 'bg-red-50 text-red-800 shadow-sm border border-red-200' 
+                    : 'text-red-600 hover:bg-red-50/50'
+                }`}
+              >
+                🔧 系統管理員
+              </button>
+            )}
           </div>
 
           {/* === 頁籤內容：表單 === */}
@@ -542,36 +616,23 @@ export default function RegistrationApp() {
             </div>
           )}
 
-          {/* === 頁籤內容：歷史紀錄 (卡片式) === */}
+          {/* === 頁籤內容：歷史紀錄 (僅顯示自己) === */}
           {activeTab === 'history' && (
             <div className="space-y-4 animate-fade-in">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {notes.map((note) => {
+                {/* 如果是普通人，只顯示自己的紀錄 (過濾掉不屬於自己的) */}
+                {/* 雖然 RLS 會擋，但前端這裡再擋一次比較保險 */}
+                {notes.filter(n => isAdmin || n.real_name === getDisplayNameOnly(user.email || '')).map((note) => {
                   const completed = isExpired(note.end_date, note.end_time);
                   return (
                     <div key={note.id} className={`bg-white p-5 rounded-xl shadow-sm border transition relative overflow-hidden ${completed ? 'border-gray-200 bg-gray-50/50' : 'border-amber-100 hover:border-amber-300'}`}>
-                      {/* 已圓滿標籤 */}
-                      {completed && (
-                        <div className="absolute top-0 right-0 bg-gray-200 text-gray-500 text-xs font-bold px-3 py-1 rounded-bl-lg z-10">
-                          已圓滿
-                        </div>
-                      )}
-                      
+                      {completed && <div className="absolute top-0 right-0 bg-gray-200 text-gray-500 text-xs font-bold px-3 py-1 rounded-bl-lg z-10">已圓滿</div>}
                       <div className="flex justify-between items-start mb-3">
                          <div className="flex items-center gap-2">
-                           <span className={`text-xs px-2 py-1 rounded-full text-white ${
-                             completed 
-                               ? 'bg-gray-400' 
-                               : note.action_type === '新增' ? 'bg-blue-500' : 'bg-orange-500'
-                           }`}>
-                             {note.action_type}
-                           </span>
-                           <h4 className={`font-bold text-lg ${completed ? 'text-gray-500' : 'text-amber-900'}`}>
-                             {note.team_big} - {note.team_small}
-                           </h4>
+                           <span className={`text-xs px-2 py-1 rounded-full text-white ${note.action_type === '新增' ? 'bg-blue-500' : 'bg-orange-500'}`}>{note.action_type}</span>
+                           <h4 className={`font-bold text-lg ${completed ? 'text-gray-500' : 'text-amber-900'}`}>{note.team_big} - {note.team_small}</h4>
                          </div>
                       </div>
-                      
                       <div className="text-sm text-gray-700 space-y-2">
                          <div className="grid grid-cols-2 gap-2">
                            <p><span className="text-gray-400">精舍：</span>{note.monastery}</p>
@@ -579,32 +640,13 @@ export default function RegistrationApp() {
                            <p><span className="text-gray-400">法名：</span>{note.dharma_name || '-'}</p>
                            <p><span className="text-gray-400">協助：</span>{note.need_help ? '是' : '否'}</p>
                          </div>
-                         
                          <div className="border-t border-dashed border-gray-200 pt-2 mt-2">
-                           <p className="flex flex-col sm:flex-row sm:gap-2">
-                             <span className="text-gray-400 whitespace-nowrap">起：</span>
-                             <span className={completed ? 'text-gray-500' : 'text-gray-800'}>
-                               {note.start_date} {note.start_time}
-                             </span>
-                           </p>
-                           <p className="flex flex-col sm:flex-row sm:gap-2">
-                             <span className="text-gray-400 whitespace-nowrap">迄：</span>
-                             <span className={completed ? 'text-gray-500' : 'text-gray-800'}>
-                               {note.end_date} {note.end_time}
-                             </span>
-                           </p>
+                           <p className="flex flex-col sm:flex-row sm:gap-2"><span className="text-gray-400 whitespace-nowrap">起：</span><span className={completed ? 'text-gray-500' : 'text-gray-800'}>{note.start_date} {note.start_time}</span></p>
+                           <p className="flex flex-col sm:flex-row sm:gap-2"><span className="text-gray-400 whitespace-nowrap">迄：</span><span className={completed ? 'text-gray-500' : 'text-gray-800'}>{note.end_date} {note.end_time}</span></p>
                          </div>
-
-                         {note.memo && (
-                           <div className="bg-amber-50 p-2 rounded text-xs text-gray-600 mt-2">
-                             <span className="font-bold text-amber-700">想說的話：</span>{note.memo}
-                           </div>
-                         )}
+                         {note.memo && <div className="bg-amber-50 p-2 rounded text-xs text-gray-600 mt-2"><span className="font-bold text-amber-700">想說的話：</span>{note.memo}</div>}
                       </div>
-                      
-                      <p className="text-xs text-right text-gray-300 mt-3">
-                        登記於：{new Date(note.created_at).toLocaleDateString()}
-                      </p>
+                      <p className="text-xs text-right text-gray-300 mt-3">登記於：{new Date(note.created_at).toLocaleDateString()}</p>
                     </div>
                   );
                 })}
@@ -616,6 +658,87 @@ export default function RegistrationApp() {
               )}
             </div>
           )}
+
+          {/* === [新增] 頁籤內容：系統管理員 (全體資料列表 + 匯出) === */}
+          {activeTab === 'admin' && isAdmin && (
+             <div className="space-y-6 animate-fade-in">
+               
+               {/* 篩選與工具列 */}
+               <div className="bg-white p-6 rounded-xl shadow-md border border-red-100 flex flex-col md:flex-row gap-4 items-end md:items-center justify-between">
+                 <div className="w-full md:w-auto">
+                   <label className="block text-sm font-bold text-gray-700 mb-2">篩選月份 (發心起日)</label>
+                   <input 
+                     type="month" 
+                     className="w-full p-2 border border-gray-300 rounded-lg text-gray-900 focus:ring-2 focus:ring-red-500"
+                     value={filterMonth}
+                     onChange={(e) => setFilterMonth(e.target.value)}
+                   />
+                 </div>
+                 
+                 <div className="flex gap-4 w-full md:w-auto">
+                    <div className="text-right flex-1 md:flex-none">
+                      <p className="text-xs text-gray-500">目前顯示</p>
+                      <p className="text-2xl font-bold text-red-600">{getFilteredNotes().length} <span className="text-sm font-normal text-gray-400">筆資料</span></p>
+                    </div>
+                    <button 
+                      onClick={exportToExcel}
+                      className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg font-bold shadow-sm transition flex items-center gap-2"
+                    >
+                      <span>📊</span> 匯出 Excel (CSV)
+                    </button>
+                 </div>
+               </div>
+
+               {/* 全體資料表格 */}
+               <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden overflow-x-auto">
+                 <table className="min-w-full divide-y divide-gray-200">
+                   <thead className="bg-gray-50">
+                     <tr>
+                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">狀態</th>
+                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">大隊/小隊</th>
+                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">精舍</th>
+                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">姓名 (ID末四碼)</th>
+                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">法名</th>
+                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">發心時間</th>
+                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">協助</th>
+                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">備註</th>
+                     </tr>
+                   </thead>
+                   <tbody className="bg-white divide-y divide-gray-200">
+                     {getFilteredNotes().map((note) => (
+                       <tr key={note.id} className="hover:bg-gray-50 transition">
+                         <td className="px-4 py-4 whitespace-nowrap">
+                           <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${note.action_type === '新增' ? 'bg-blue-100 text-blue-800' : 'bg-orange-100 text-orange-800'}`}>
+                             {note.action_type}
+                           </span>
+                         </td>
+                         <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                           {note.team_big} <span className="text-gray-400">|</span> {note.team_small}
+                         </td>
+                         <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">{note.monastery}</td>
+                         <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                           {note.real_name} <span className="text-xs text-gray-400">({note.id_2})</span>
+                         </td>
+                         <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{note.dharma_name || '-'}</td>
+                         <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
+                           <div>{note.start_date} {note.start_time}</div>
+                           <div className="text-xs text-gray-400">至 {note.end_date} {note.end_time}</div>
+                         </td>
+                         <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{note.need_help ? '是' : '否'}</td>
+                         <td className="px-4 py-4 text-sm text-gray-500 max-w-xs truncate" title={note.memo}>
+                           {note.memo || '-'}
+                         </td>
+                       </tr>
+                     ))}
+                   </tbody>
+                 </table>
+                 {getFilteredNotes().length === 0 && (
+                   <div className="p-8 text-center text-gray-500">此月份無資料</div>
+                 )}
+               </div>
+             </div>
+          )}
+
         </div>
       )}
     </div>
