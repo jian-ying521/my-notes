@@ -1,22 +1,13 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-
-// ==========================================
-// [⚠️ 重要：環境切換說明]
-// 因線上預覽環境無法安裝 Supabase 套件，目前預設為 [模擬模式]。
-//
-// === 當您複製回 VS Code (正式環境) 時，請執行以下步驟： ===
-// 1. 確保終端機已安裝: npm install @supabase/supabase-js
-// 2. [刪除] 下方的「模擬連線區塊」
-// 3. [解除註解] 下方的「正式連線區塊」
-// ==========================================
-
-
-// --- [1. 正式連線區塊] (複製回電腦後，請把這段解除註解) ---
-/*
+// 引入 Supabase 套件 (請確保終端機已執行 npm install @supabase/supabase-js)
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 
+// ==========================================
+// [正式連線設定]
+// 這裡會讀取 .env.local 或 Vercel 設定中的環境變數
+// ==========================================
 const createClient = () => {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
   const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -27,20 +18,6 @@ const createClient = () => {
 
   return createSupabaseClient(supabaseUrl, supabaseKey);
 };
-*/
-import { createClient as createSupabaseClient } from '@supabase/supabase-js';
-
-const createClient = () => {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-  
-  if (!supabaseUrl || !supabaseKey) {
-    console.warn('警告：找不到 Supabase 環境變數，請檢查 Vercel 設定。');
-  }
-
-  return createSupabaseClient(supabaseUrl, supabaseKey);
-};
-
 
 export default function RegistrationApp() {
   const [notes, setNotes] = useState<any[]>([]);
@@ -72,7 +49,7 @@ export default function RegistrationApp() {
   const supabase = createClient();
   const FAKE_DOMAIN = "@my-notes.com";
 
-  // === 轉碼工具 ===
+  // === 轉碼工具 (處理中文帳號) ===
   const encodeName = (name: string) => {
     try {
       return btoa(encodeURIComponent(name)).replace(/=/g, '');
@@ -114,28 +91,30 @@ export default function RegistrationApp() {
   }, []);
 
   const fetchNotes = async () => {
-    // @ts-ignore
-    const { data, error } = await supabase
-      .from('notes')
-      .select('*')
-      // @ts-ignore
-      .order('created_at', { ascending: false });
-    
-    if (error) {
-      console.error('讀取失敗:', error);
-      if (user) alert('無法讀取歷史紀錄：' + error.message);
-    } else {
-      if (data) setNotes(data);
+    try {
+      const { data, error } = await supabase
+        .from('notes')
+        .select('*')
+        .order('created_at', { ascending: false });
+      
+      if (error) {
+        console.error('讀取失敗:', error);
+        // 若使用者已登入卻讀不到，顯示錯誤
+        if (user) alert('無法讀取歷史紀錄：' + error.message);
+      } else {
+        if (data) setNotes(data);
+      }
+    } catch (err) {
+      console.error('連線錯誤:', err);
     }
   };
 
-  // === 紀錄登入動作 ===
+  // === 紀錄登入動作至 login_history ===
   const recordLogin = async (name: string, action: string = '登入') => {
     try {
       await supabase.from('login_history').insert([
         { real_name: name, action: action }
       ]);
-      console.log(`[系統紀錄] ${name} ${action}`);
     } catch (e) {
       console.error('紀錄登入失敗', e);
     }
@@ -153,12 +132,14 @@ export default function RegistrationApp() {
     
     const insertData = {
       ...formData,
+      // 摘要內容 (相容舊版或後台快速檢視)
       content: `【${formData.action_type}】${formData.team_big}-${formData.team_small} ${formData.real_name}` 
     };
 
     const { error } = await supabase.from('notes').insert([insertData]);
     if (!error) {
       alert('資料送出成功！');
+      // 送出後清空表單，保留姓名與部分預設值
       setFormData({
         team_big: '觀音隊',
         team_small: '第1小隊',
@@ -174,9 +155,8 @@ export default function RegistrationApp() {
         memo: ''
       });
       fetchNotes();
-      setActiveTab('history');
+      setActiveTab('history'); // 自動切換到歷史紀錄頁籤
     } else {
-      // @ts-ignore
       alert('寫入失敗：' + error.message + '\n(請檢查 Supabase 是否已建立所有新欄位)');
     }
   };
@@ -195,6 +175,7 @@ export default function RegistrationApp() {
       setFormData(prev => ({ ...prev, real_name: username }));
       fetchNotes();
       
+      // 紀錄註冊行為
       await recordLogin(username, '註冊');
     }
     setLoading(false);
@@ -206,13 +187,13 @@ export default function RegistrationApp() {
     const email = encodeName(username) + FAKE_DOMAIN;
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) {
-      // @ts-ignore
       alert('登入失敗：' + error.message);
     } else {
       setUser(data.user);
       setFormData(prev => ({ ...prev, real_name: username }));
       fetchNotes();
 
+      // 紀錄登入行為
       await recordLogin(username, '登入');
     }
     setLoading(false);
@@ -272,9 +253,6 @@ export default function RegistrationApp() {
               註冊
             </button>
           </div>
-          <p className="mt-4 text-xs text-center text-gray-400">
-            *預覽模式：使用模擬資料 (請依檔案說明切換為正式版)
-          </p>
         </div>
       ) : (
         <div className="w-full max-w-4xl animate-fade-in">
