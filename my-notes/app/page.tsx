@@ -46,7 +46,7 @@ export default function RegistrationApp() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // [修改] 將預設頁籤改為 'bulletin' (公告欄)
+  // [預設] 登入後看到公告欄 'bulletin'
   const [activeTab, setActiveTab] = useState<'form' | 'history' | 'admin' | 'bulletin'>('bulletin');
   const [filterMonth, setFilterMonth] = useState('');
 
@@ -188,6 +188,7 @@ export default function RegistrationApp() {
     }
   };
 
+  // 發布公告
   const handlePostBulletin = async () => {
     if (!bulletinText && !bulletinImage) return alert('請輸入文字或上傳圖片');
     
@@ -204,6 +205,28 @@ export default function RegistrationApp() {
       setBulletinImage('');
       if (fileInputRef.current) fileInputRef.current.value = '';
       fetchBulletins();
+    }
+    setLoading(false);
+  };
+
+  // [新增] 撤除公告功能
+  const handleDeleteBulletin = async (id: number) => {
+    if (!confirm('確定要撤除此公告嗎？此動作無法復原。')) return;
+
+    setLoading(true);
+    const { error } = await supabase
+      .from('bulletins')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      alert('撤除失敗：' + error.message);
+    } else {
+      alert('公告已撤除。');
+      // 若使用模擬模式，手動更新狀態以即時顯示
+      setBulletins(prev => prev.filter(b => b.id !== id));
+      // 若是正式連線，fetchBulletins 也會更新
+      fetchBulletins(); 
     }
     setLoading(false);
   };
@@ -314,7 +337,7 @@ export default function RegistrationApp() {
     setUsername('');
     setIdLast4('');
     setPassword('');
-    // [修改] 登出後，將下次登入的預設頁籤重置為 'bulletin'
+    // 登出後重置為公告頁
     setActiveTab('bulletin');
   }, [supabase.auth]);
 
@@ -525,10 +548,22 @@ export default function RegistrationApp() {
               {/* 公告列表 (所有人可見) */}
               <div className="space-y-4">
                 {bulletins.map((b) => (
-                  <div key={b.id} className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+                  <div key={b.id} className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 relative group">
+                    
+                    {/* [新增] 管理員撤除按鈕 */}
+                    {isAdmin && (
+                      <button 
+                        onClick={() => handleDeleteBulletin(b.id)}
+                        className="absolute top-4 right-4 text-gray-400 hover:text-red-500 bg-white hover:bg-red-50 p-2 rounded-full transition-all opacity-0 group-hover:opacity-100"
+                        title="撤除此公告"
+                      >
+                        🗑️ 撤除
+                      </button>
+                    )}
+
                     <div className="flex justify-between items-start mb-2">
                       <span className="bg-orange-100 text-orange-800 text-xs px-2 py-1 rounded-full font-bold">公告</span>
-                      <span className="text-xs text-gray-400">{new Date(b.created_at).toLocaleDateString()}</span>
+                      <span className="text-xs text-gray-400 mr-10">{new Date(b.created_at).toLocaleDateString()}</span>
                     </div>
                     <p className="text-gray-800 whitespace-pre-wrap leading-relaxed text-lg mb-4">{b.content}</p>
                     {b.image_url && (
@@ -561,6 +596,7 @@ export default function RegistrationApp() {
                     <option value="文殊隊">文殊隊</option>
                     <option value="普賢隊">普賢隊</option>
                     <option value="地藏隊">地藏隊</option>
+                    <option value="彌勒隊">彌勒隊</option>
                   </select>
                 </div>
                 {/* 2. 小隊 */}
@@ -571,6 +607,7 @@ export default function RegistrationApp() {
                     <option value="第2小隊">第2小隊</option>
                     <option value="第3小隊">第3小隊</option>
                     <option value="第4小隊">第4小隊</option>
+                    <option value="第5小隊">第5小隊</option>
                   </select>
                 </div>
                 {/* 3. 精舍 */}
