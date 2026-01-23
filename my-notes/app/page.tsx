@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 
 // ==========================================
 // [⚠️ 模式切換說明]
@@ -128,7 +128,6 @@ export default function RegistrationApp() {
 
   // [新增] 匯出 Excel (CSV) 功能
   const exportToExcel = () => {
-    // 取得目前篩選後的資料
     const dataToExport = getFilteredNotes();
     
     if (dataToExport.length === 0) {
@@ -136,15 +135,13 @@ export default function RegistrationApp() {
       return;
     }
 
-    // 定義 CSV 標頭
     const headers = [
       "大隊", "小隊", "精舍", "姓名", "身分證後四碼", "法名", "動作", 
       "開始日期", "開始時間", "結束日期", "結束時間", "需協助", "備註", "登記時間"
     ];
 
-    // 轉換資料為 CSV 格式
     const csvRows = [
-      headers.join(','), // 標題列
+      headers.join(','),
       ...dataToExport.map(note => [
         note.team_big,
         note.team_small,
@@ -158,16 +155,14 @@ export default function RegistrationApp() {
         note.end_date,
         note.end_time,
         note.need_help ? '是' : '否',
-        `"${(note.memo || '').replace(/"/g, '""')}"`, // 處理備註中的逗號
+        `"${(note.memo || '').replace(/"/g, '""')}"`,
         new Date(note.created_at).toLocaleDateString()
       ].join(','))
     ];
 
     const csvString = csvRows.join('\n');
-    // 加入 BOM 以確保 Excel 能正確顯示中文
     const blob = new Blob(["\ufeff" + csvString], { type: 'text/csv;charset=utf-8;' });
     
-    // 建立下載連結
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
@@ -177,9 +172,8 @@ export default function RegistrationApp() {
     document.body.removeChild(link);
   };
 
-  // [新增] 篩選邏輯
   const getFilteredNotes = () => {
-    if (!filterMonth) return notes; // 沒選月份就回傳全部
+    if (!filterMonth) return notes; 
     return notes.filter(note => note.start_date && note.start_date.startsWith(filterMonth));
   };
 
@@ -198,7 +192,6 @@ export default function RegistrationApp() {
 
   const fetchNotes = async (targetUser: any = user) => {
     try {
-      // 這裡如果 Supabase RLS 設定正確，管理員會抓到所有人資料，普通人只抓到自己的
       // @ts-ignore
       const { data, error } = await supabase
         .from('notes')
@@ -271,6 +264,51 @@ export default function RegistrationApp() {
     }
   };
 
+  // [修改] 使用 useCallback 包裝登出功能，供 useEffect 呼叫
+  const handleLogout = useCallback(async () => {
+    await supabase.auth.signOut();
+    setUser(null);
+    setNotes([]);
+    setUsername('');
+    setIdLast4('');
+    setPassword('');
+    setActiveTab('form');
+  }, [supabase.auth]);
+
+  // [新增] 自動登出機制 (15分鐘無操作)
+  useEffect(() => {
+    if (!user) return;
+
+    // 15分鐘 = 15 * 60 * 1000 毫秒
+    const AUTO_LOGOUT_TIME = 15 * 60 * 1000; 
+    let timeoutId: NodeJS.Timeout;
+
+    // 執行登出
+    const performAutoLogout = () => {
+      alert("您已閒置超過 15 分鐘，系統將自動登出以確保安全。");
+      handleLogout();
+    };
+
+    // 重置計時器
+    const resetTimer = () => {
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(performAutoLogout, AUTO_LOGOUT_TIME);
+    };
+
+    // 監聽使用者操作事件
+    const events = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart'];
+    events.forEach(event => document.addEventListener(event, resetTimer));
+
+    // 初始啟動計時
+    resetTimer();
+
+    // 清除監聽 (組件卸載或 user 改變時)
+    return () => {
+      clearTimeout(timeoutId);
+      events.forEach(event => document.removeEventListener(event, resetTimer));
+    };
+  }, [user, handleLogout]);
+
   const handleSignUp = async () => {
     if (!username || !idLast4 || !password) return alert("請輸入完整資料");
     if (idLast4.length !== 4) return alert("身分證後四碼必須為 4 位數字");
@@ -321,16 +359,6 @@ export default function RegistrationApp() {
       await recordLogin(uniqueId, '登入');
     }
     setLoading(false);
-  };
-
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    setUser(null);
-    setNotes([]);
-    setUsername('');
-    setIdLast4('');
-    setPassword('');
-    setActiveTab('form');
   };
 
   return (
@@ -440,7 +468,7 @@ export default function RegistrationApp() {
               📋 我的紀錄
             </button>
             
-            {/* [新增] 只有管理員才看得到的頁籤 */}
+            {/* 只有管理員才看得到的頁籤 */}
             {isAdmin && (
               <button
                 onClick={() => setActiveTab('admin')}
@@ -620,8 +648,6 @@ export default function RegistrationApp() {
           {activeTab === 'history' && (
             <div className="space-y-4 animate-fade-in">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* 如果是普通人，只顯示自己的紀錄 (過濾掉不屬於自己的) */}
-                {/* 雖然 RLS 會擋，但前端這裡再擋一次比較保險 */}
                 {notes.filter(n => isAdmin || n.real_name === getDisplayNameOnly(user.email || '')).map((note) => {
                   const completed = isExpired(note.end_date, note.end_time);
                   return (
@@ -659,7 +685,7 @@ export default function RegistrationApp() {
             </div>
           )}
 
-          {/* === [新增] 頁籤內容：系統管理員 (全體資料列表 + 匯出) === */}
+          {/* === 系統管理員頁籤 === */}
           {activeTab === 'admin' && isAdmin && (
              <div className="space-y-6 animate-fade-in">
                
