@@ -697,7 +697,6 @@ export default function RegistrationApp() {
             </div>
           )}
 
-          {/* === [修改] 頁籤內容：全部報名資料 (管理員) === */}
           {activeTab === 'admin_data' && isAdmin && (
              <div className="space-y-6 animate-fade-in">
                <div className="bg-white p-6 rounded-xl shadow-md border border-red-100">
@@ -709,14 +708,16 @@ export default function RegistrationApp() {
                  <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden overflow-x-auto">
                    <table className="min-w-full divide-y divide-gray-200">
                      <thead className="bg-gray-50">
-                       <tr><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">狀態</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">姓名 (ID)</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">時間</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">備註</th></tr>
+                       <tr><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">狀態</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">姓名 (ID)</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">法名</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">發心起日時</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">發心迄日時</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">備註</th></tr>
                      </thead>
                      <tbody className="bg-white divide-y divide-gray-200">
                        {getFilteredNotes().map((note) => (
                          <tr key={note.id} className="hover:bg-gray-50">
                            <td className="px-4 py-4 whitespace-nowrap"><span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${note.action_type === '新增' ? 'bg-blue-100 text-blue-800' : 'bg-orange-100 text-orange-800'}`}>{note.action_type}</span></td>
                            <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">{note.real_name} <span className="text-gray-400">({note.id_2})</span></td>
+                           <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">{note.dharma_name || '-'}</td>
                            <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{note.start_date} {note.start_time}</td>
+                           <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{note.end_date} {note.end_time}</td>
                            <td className="px-4 py-4 text-sm text-gray-500 max-w-xs truncate">{note.memo || '-'}</td>
                          </tr>
                        ))}
@@ -727,7 +728,6 @@ export default function RegistrationApp() {
              </div>
           )}
 
-          {/* === [新增] 頁籤內容：使用者管理 (管理員) === */}
           {activeTab === 'admin_users' && isAdmin && (
              <div className="space-y-6 animate-fade-in">
                <div className="bg-white p-6 rounded-xl shadow-md border border-blue-100">
@@ -762,27 +762,13 @@ export default function RegistrationApp() {
                                     <td className="px-4 py-3 text-sm text-gray-500">{u.id_last4}</td>
                                     <td className="px-4 py-3 text-right text-sm font-medium">
                                         <div className="flex justify-end gap-2">
-                                            <button 
-                                                onClick={() => openPwdModal(u)}
-                                                className="text-blue-600 hover:text-blue-900 bg-blue-50 px-3 py-1 rounded border border-blue-100 transition"
-                                            >
-                                                修改密碼
-                                            </button>
-                                            <button 
-                                                onClick={() => handleAdminDeleteUser(u.id)}
-                                                className="text-red-600 hover:text-red-900 bg-red-50 px-3 py-1 rounded border border-red-100 transition"
-                                            >
-                                                刪除
-                                            </button>
+                                            <button onClick={() => openPwdModal(u)} className="text-blue-600 hover:text-blue-900 bg-blue-50 px-3 py-1 rounded border border-blue-100 transition">修改密碼</button>
+                                            <button onClick={() => handleAdminDeleteUser(u.id)} className="text-red-600 hover:text-red-900 bg-red-50 px-3 py-1 rounded border border-red-100 transition">刪除</button>
                                         </div>
                                     </td>
                                 </tr>
                             )) : (
-                                <tr>
-                                    <td colSpan={3} className="px-4 py-8 text-center text-sm text-gray-500">
-                                        暫無使用者資料
-                                    </td>
-                                </tr>
+                                <tr><td colSpan={3} className="px-4 py-8 text-center text-sm text-gray-500">暫無使用者資料</td></tr>
                             )}
                         </tbody>
                     </table>
@@ -804,18 +790,10 @@ export default function RegistrationApp() {
             <p className="text-sm text-gray-500 mb-4">
               {pwdTargetUser === 'SELF' ? '請輸入您的新密碼。' : '⚠️ 您正在強制修改他人密碼，請謹慎操作。'}
             </p>
-            <input 
-              type="password" 
-              placeholder="輸入新密碼 (至少6碼)" 
-              className="w-full p-3 border border-gray-300 rounded-lg mb-4 text-gray-900"
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-            />
+            <input type="password" placeholder="輸入新密碼 (至少6碼)" className="w-full p-3 border border-gray-300 rounded-lg mb-4 text-gray-900" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
             <div className="flex gap-3 justify-end">
               <button onClick={() => setShowPwdModal(false)} className="px-4 py-2 text-gray-500 hover:bg-gray-100 rounded-lg">取消</button>
-              <button onClick={handleChangePassword} disabled={loading} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-                {loading ? '處理中...' : '確認修改'}
-              </button>
+              <button onClick={handleChangePassword} disabled={loading} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">{loading ? '處理中...' : '確認修改'}</button>
             </div>
           </div>
         </div>
