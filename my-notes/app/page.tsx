@@ -655,7 +655,7 @@ export default function RegistrationApp() {
 
   return (
     <div className="min-h-screen bg-amber-50 flex flex-col items-center py-10 px-4 font-sans text-gray-900">
-      <h1 className="text-3xl font-bold text-amber-900 mb-8 tracking-wide">一一報名系統</h1>
+      <h1 className="text-3xl font-bold text-amber-900 mb-8 tracking-wide">一一一報名系統</h1>
 
       {!user ? (
         <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-sm border border-amber-200">
