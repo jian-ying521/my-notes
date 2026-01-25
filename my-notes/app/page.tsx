@@ -49,7 +49,6 @@ export default function RegistrationApp() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // 預設登入後進入公告欄
   const [activeTab, setActiveTab] = useState<'form' | 'history' | 'admin_data' | 'admin_users' | 'bulletin'>('bulletin');
   const [filterMonth, setFilterMonth] = useState('');
 
@@ -166,7 +165,7 @@ export default function RegistrationApp() {
         note.need_help ? '是' : '否',
         `"${(note.memo || '').replace(/"/g, '""')}"`,
         new Date(note.created_at).toLocaleDateString(),
-        note.sign_name ? `${note.sign_name} (${note.id_2})` : '-' 
+        note.sign_name || '' 
       ].join(','))
     ];
     const csvString = csvRows.join('\n');
@@ -245,11 +244,7 @@ export default function RegistrationApp() {
       if (error) alert('修改失敗：' + error.message);
       else alert('密碼修改成功！');
     } else {
-      if (process.env.NEXT_PUBLIC_SUPABASE_URL) {
-          alert('提示：由於 Supabase 安全限制，正式環境中無法在前端直接修改他人密碼。\n請使用 Supabase Dashboard 或後端 API 發送重設信。');
-      } else {
-          alert(`[模擬] 已強制修改使用者 ${pwdTargetUser.display_name} 的密碼為: ${newPassword}`);
-      }
+      alert('無法在前端修改他人密碼，請使用後端 API。');
     }
 
     setLoading(false);
@@ -293,28 +288,41 @@ export default function RegistrationApp() {
     setLoading(false);
   };
 
-  const handleAdminDeleteUser = async (targetId: string) => {
-    if (!confirm('確定要刪除此使用者嗎？此動作無法復原！')) return;
-    setLoading(true);
-
-    if (process.env.NEXT_PUBLIC_SUPABASE_URL) {
-        alert('提示：由於 Supabase 安全限制，前端無法直接刪除使用者。\n請使用 Supabase Dashboard 進行操作。');
-    } else {
-        // @ts-ignore
-        if (supabase.auth.admin && supabase.auth.admin.deleteUser) {
-             // @ts-ignore
-             await supabase.auth.admin.deleteUser(targetId);
-             alert('[模擬] 使用者已刪除');
-             fetchAllUsers(); 
-        }
-    }
-    setLoading(false);
-  };
-
+  // [修改] 讀取所有使用者 (統計報名筆數)
   const fetchAllUsers = async () => {
-    if (mockDb && mockDb.users) {
-        setAllUsers([...mockDb.users]); 
+    // 取得所有報名資料
+    let allNotes = [];
+    if (mockDb && mockDb.notes) {
+        allNotes = [...mockDb.notes];
+    } else {
+        const { data } = await supabase.from('notes').select('sign_name, id_2').order('created_at', { ascending: false });
+        allNotes = data || [];
     }
+
+    // 統計每個 sign_name 的數量
+    const userMap = new Map();
+    allNotes.forEach(note => {
+        // 使用 sign_name 作為唯一識別 (格式: 姓名 (ID))
+        // 如果舊資料沒有 sign_name，嘗試組合
+        const displayName = note.sign_name || '未知使用者';
+        // 解析 ID
+        let idPart = '';
+        if (note.id_2) idPart = note.id_2;
+        else if (displayName.includes('(')) {
+             idPart = displayName.split('(')[1].replace(')', '');
+        }
+
+        if (!userMap.has(displayName)) {
+            userMap.set(displayName, {
+                display_name: displayName,
+                id_last4: idPart,
+                count: 0
+            });
+        }
+        userMap.get(displayName).count += 1;
+    });
+
+    setAllUsers(Array.from(userMap.values()));
   };
 
   const fetchBulletins = async () => {
@@ -385,15 +393,13 @@ export default function RegistrationApp() {
     if (formData.dharma_name && formData.dharma_name.length > 2) return alert('法名欄位限填2個字');
     
     const currentId2 = getIdLast4FromEmail(user.email || '');
-
-    // [修改] sign_name 只寫入姓名 (不再包含 ID)，顯示時再組合
-    const signNameOnly = getDisplayNameOnly(user.email || '');
+    const signNameCombined = `${getDisplayNameOnly(user.email || '')} (${currentId2})`;
 
     const insertData = {
       ...formData,
       id_2: currentId2,
       user_id: user.id,
-      sign_name: signNameOnly, 
+      sign_name: signNameCombined, 
       content: `【${formData.action_type}】${formData.team_big}-${formData.team_small} ${formData.real_name}` 
     };
 
@@ -415,6 +421,8 @@ export default function RegistrationApp() {
         memo: ''
       });
       fetchNotes(user); 
+      // 成功後如果身分是管理員，也更新使用者統計列表
+      if (isAdmin) fetchAllUsers();
       setActiveTab('history');
     } else {
       // @ts-ignore
@@ -651,7 +659,7 @@ export default function RegistrationApp() {
           {activeTab === 'history' && (
             <div className="space-y-4 animate-fade-in">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* [修改] 嚴格限制：只顯示 user_id 相符的資料 */}
+                {/* [修改] 歷史紀錄顯示邏輯：只顯示自己的資料 (filter by user_id) */}
                 {notes.filter(n => n.user_id === user?.id).map((note) => {
                   const completed = isExpired(note.end_date, note.end_time);
                   return (
@@ -664,7 +672,7 @@ export default function RegistrationApp() {
                          <div className="grid grid-cols-2 gap-2"><p><span className="text-gray-400">精舍：</span>{note.monastery}</p><p><span className="text-gray-400">姓名：</span>{note.real_name}</p><p><span className="text-gray-400">法名：</span>{note.dharma_name || '-'}</p><p><span className="text-gray-400">協助：</span>{note.need_help ? '是' : '否'}</p></div>
                          <div className="border-t border-dashed border-gray-200 pt-2 mt-2"><p className="flex flex-col sm:flex-row sm:gap-2"><span className="text-gray-400 whitespace-nowrap">起：</span><span className={completed ? 'text-gray-500' : 'text-gray-800'}>{note.start_date} {note.start_time}</span></p><p className="flex flex-col sm:flex-row sm:gap-2"><span className="text-gray-400 whitespace-nowrap">迄：</span><span className={completed ? 'text-gray-500' : 'text-gray-800'}>{note.end_date} {note.end_time}</span></p></div>
                          {/* [修改] 顯示填表人 + ID */}
-                         <p className="text-xs text-gray-400 mt-2 border-t pt-2 border-dashed border-gray-100">填表人：{note.sign_name ? `${note.sign_name} (${note.id_2})` : '-'}</p>
+                         <p className="text-xs text-gray-400 mt-2 border-t pt-2 border-dashed border-gray-100">填表人：{note.sign_name || '-'}</p>
                          {note.memo && <div className="bg-amber-50 p-2 rounded text-xs text-gray-600 mt-2"><span className="font-bold text-amber-700">想說的話：</span>{note.memo}</div>}
                       </div>
                       <p className="text-xs text-right text-gray-300 mt-3">登記於：{new Date(note.created_at).toLocaleDateString()}</p>
@@ -701,7 +709,7 @@ export default function RegistrationApp() {
                            <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{note.start_date} {note.start_time}</td>
                            <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{note.end_date} {note.end_time}</td>
                            {/* [修改] 填表人欄位：顯示 姓名 + (ID) */}
-                           <td className="px-4 py-4 whitespace-nowrap text-sm text-blue-600 font-medium">{note.sign_name ? `${note.sign_name} (${note.id_2})` : '-'}</td>
+                           <td className="px-4 py-4 whitespace-nowrap text-sm text-blue-600 font-medium">{note.sign_name || '-'}</td>
                            <td className="px-4 py-4 text-sm text-gray-500 max-w-xs truncate">{note.memo || '-'}</td>
                          </tr>
                        ))}
@@ -716,6 +724,8 @@ export default function RegistrationApp() {
              <div className="space-y-6 animate-fade-in">
                <div className="bg-white p-6 rounded-xl shadow-md border border-blue-100">
                  <h3 className="text-lg font-bold text-blue-800 mb-4">👥 使用者管理</h3>
+                 
+                 {/* 新增使用者表單 */}
                  <div className="bg-blue-50 p-4 rounded-lg mb-6 border border-blue-200">
                    <h4 className="text-sm font-bold text-blue-900 mb-2">➕ 新增使用者</h4>
                    <div className="flex flex-col md:flex-row gap-2">
@@ -725,27 +735,29 @@ export default function RegistrationApp() {
                      <button onClick={handleAdminAddUser} disabled={loading} className="bg-blue-600 text-white px-4 py-2 rounded font-bold text-sm hover:bg-blue-700 whitespace-nowrap">新增</button>
                    </div>
                  </div>
-                 <p className="text-sm text-gray-500 mb-2">有報名過的使用者，才會出現在列表上</p>
+
+                 {/* [修改] 提示訊息 */}
+                 <div className="flex justify-between items-center mb-2">
+                    <p className="text-sm text-gray-500">有報名過的使用者，才會出現在列表上</p>
+                    <p className="text-xs text-red-500 bg-red-50 px-2 py-1 rounded">⚠️ 欲修改使用者資料，請至後端，以註冊者權限修改</p>
+                 </div>
+                 
                  <div className="bg-white rounded-lg border border-gray-200 overflow-hidden overflow-x-auto">
                     <table className="min-w-full divide-y divide-gray-200">
                         <thead className="bg-gray-50">
                             <tr>
-                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">姓名</th>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">登入者姓名 (填表人)</th>
                                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">ID 後四碼</th>
-                                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">操作</th>
+                                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">報名筆數</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-200">
                             {allUsers.length > 0 ? allUsers.map(u => (
                                 <tr key={u.id} className="hover:bg-gray-50">
+                                    {/* [修改] 顯示欄位：姓名、ID、筆數 */}
                                     <td className="px-4 py-3 text-sm font-medium text-gray-900">{u.display_name}</td>
                                     <td className="px-4 py-3 text-sm text-gray-500">{u.id_last4}</td>
-                                    <td className="px-4 py-3 text-right text-sm font-medium">
-                                        <div className="flex justify-end gap-2">
-                                            <button onClick={() => openPwdModal(u)} className="text-blue-600 hover:text-blue-900 bg-blue-50 px-3 py-1 rounded border border-blue-100 transition">修改密碼</button>
-                                            <button onClick={() => handleAdminDeleteUser(u.id)} className="text-red-600 hover:text-red-900 bg-red-50 px-3 py-1 rounded border border-red-100 transition">刪除</button>
-                                        </div>
-                                    </td>
+                                    <td className="px-4 py-3 text-right text-sm font-medium text-blue-600">{u.count} 筆</td>
                                 </tr>
                             )) : (
                                 <tr><td colSpan={3} className="px-4 py-8 text-center text-sm text-gray-500">暫無使用者資料</td></tr>
@@ -770,10 +782,18 @@ export default function RegistrationApp() {
             <p className="text-sm text-gray-500 mb-4">
               {pwdTargetUser === 'SELF' ? '請輸入您的新密碼。' : '⚠️ 您正在強制修改他人密碼，請謹慎操作。'}
             </p>
-            <input type="password" placeholder="輸入新密碼 (至少6碼)" className="w-full p-3 border border-gray-300 rounded-lg mb-4 text-gray-900" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
+            <input 
+              type="password" 
+              placeholder="輸入新密碼 (至少6碼)" 
+              className="w-full p-3 border border-gray-300 rounded-lg mb-4 text-gray-900"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+            />
             <div className="flex gap-3 justify-end">
               <button onClick={() => setShowPwdModal(false)} className="px-4 py-2 text-gray-500 hover:bg-gray-100 rounded-lg">取消</button>
-              <button onClick={handleChangePassword} disabled={loading} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">{loading ? '處理中...' : '確認修改'}</button>
+              <button onClick={handleChangePassword} disabled={loading} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                {loading ? '處理中...' : '確認修改'}
+              </button>
             </div>
           </div>
         </div>
