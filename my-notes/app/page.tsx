@@ -5,15 +5,26 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 // ==========================================
 // [⚠️ 環境切換說明：請在 VS Code 中閱讀此段]
 //
-// 目前為了讓您在線上能看到畫面，預設開啟 [模擬模式]。
-// 當您要部署到 Vercel 時，請執行以下 3 步驟：
+// 目前預設開啟 [模擬模式] (Mock Mode)。
+// 當您要部署到 Vercel (正式環境) 時，請執行以下步驟：
 //
-// 1. 確保終端機已執行安裝: npm install @supabase/supabase-js
-// 2. [解除註解] 下方的「正式連線區塊 (A)」
-// 3. [刪除] 下方的「模擬連線區塊 (B)」的內容 (但請保留最上方的變數宣告)
+// 1. 確保終端機已執行: npm install @supabase/supabase-js
+// 2. 解除下方 [A. 正式連線區塊] 的註解
+// 3. 刪除下方 [B. 模擬連線區塊] 的「內容」，但保留變數宣告 (let mockUser...)
+//
+// [🛠️ SQL 修復指令 - 解決無法刪除/寫入問題]
+// 請到 Supabase SQL Editor 執行：
+/*
+  alter table notes add column if not exists is_deleted boolean default false;
+  alter table notes add column if not exists sign_name text;
+  
+  -- 重設權限 (確保可以 Update)
+  drop policy if exists "Enable all for authenticated" on notes;
+  create policy "Enable all for authenticated" on notes for all to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id);
+*/
 // ==========================================
 
-// --- 全域變數宣告 (請保留此處，避免刪除區塊後報錯) ---
+// --- [全域變數宣告] (請保留此處，避免刪除區塊後報錯) ---
 let mockUser: any = null;
 let mockDb: any = undefined; 
 
@@ -45,7 +56,6 @@ export default function RegistrationApp() {
   const [allUsers, setAllUsers] = useState<any[]>([]); 
   const [user, setUser] = useState<any>(null);
   
-  // 選項資料 State
   const [teamBigOptions, setTeamBigOptions] = useState<any[]>([]);
   const [teamSmallOptions, setTeamSmallOptions] = useState<any[]>([]);
   const [newOptionValue, setNewOptionValue] = useState('');
@@ -141,7 +151,6 @@ export default function RegistrationApp() {
 
   const isAdmin = user ? getDisplayNameOnly(user.email || '') === ADMIN_ACCOUNT : false;
 
-  // 讀取系統選項
   const fetchOptions = useCallback(async () => {
     try {
       const { data: bigData } = await supabase
@@ -197,18 +206,14 @@ export default function RegistrationApp() {
 
   const handleInitializeDefaults = async () => {
       if (!confirm('確定要匯入預設選項嗎？\n(若資料庫已有資料，建議不要重複執行)')) return;
-      
       setLoading(true);
       const defaultBig = ['觀音隊', '文殊隊', '普賢隊', '地藏隊', '彌勒隊'];
       const defaultSmall = ['第1小隊', '第2小隊', '第3小隊', '第4小隊', '第5小隊'];
-
       const insertPayload = [
           ...defaultBig.map(v => ({ category: 'team_big', value: v })),
           ...defaultSmall.map(v => ({ category: 'team_small', value: v }))
       ];
-
       const { error } = await supabase.from('system_options').insert(insertPayload);
-      
       if (error) alert('匯入失敗：' + error.message);
       else {
           alert('預設選項匯入成功！');
@@ -285,10 +290,8 @@ export default function RegistrationApp() {
     const { error } = await supabase.from('bulletins').insert([
       { content: bulletinText, image_url: bulletinImage }
     ]);
-
-    if (error) {
-      alert('發布失敗：' + error.message);
-    } else {
+    if (error) alert('發布失敗：' + error.message);
+    else {
       alert('公告發布成功！');
       setBulletinText('');
       setBulletinImage('');
@@ -300,12 +303,10 @@ export default function RegistrationApp() {
 
   const handleDeleteBulletin = async (id: number) => {
     if (!confirm('確定要撤除此公告嗎？')) return;
-
     setLoading(true);
     const { error } = await supabase.from('bulletins').delete().eq('id', id);
-    if (error) {
-      alert('撤除失敗：' + error.message);
-    } else {
+    if (error) alert('撤除失敗：' + error.message);
+    else {
       alert('公告已撤除。');
       setBulletins(prev => prev.filter(b => b.id !== id));
       fetchBulletins(); 
@@ -329,6 +330,7 @@ export default function RegistrationApp() {
         return;
     }
 
+    // 正式更新
     const { data, error } = await supabase
       .from('notes')
       .update({ is_deleted: newStatus })
@@ -338,7 +340,8 @@ export default function RegistrationApp() {
     if (error) {
       alert('更新失敗：' + error.message);
     } else if (data && data.length === 0) {
-      alert('權限錯誤：無法修改資料。請檢查 RLS。');
+      // 若更新筆數為 0，通常是 RLS 權限問題
+      alert('權限錯誤：無法修改資料。\n請確認 Supabase 已建立 UPDATE 的 RLS 政策。\n(請參考檔案最上方的 SQL 指令)');
     } else {
       setNotes(prev => prev.map(n => n.id === id ? { ...n, is_deleted: newStatus } : n));
       if (isAdmin) fetchAllUsers();
@@ -347,9 +350,7 @@ export default function RegistrationApp() {
   };
 
   const handleChangePassword = async () => {
-    if (!newPassword || newPassword.length < 6) {
-      return alert('密碼長度需至少 6 碼');
-    }
+    if (!newPassword || newPassword.length < 6) return alert('密碼長度需至少 6 碼');
     setLoading(true);
 
     if (pwdTargetUser === 'SELF') {
@@ -363,7 +364,6 @@ export default function RegistrationApp() {
           alert(`[模擬] 已強制修改使用者 ${pwdTargetUser.display_name} 的密碼為: ${newPassword}`);
       }
     }
-
     setLoading(false);
     setShowPwdModal(false);
     setNewPassword('');
@@ -393,9 +393,8 @@ export default function RegistrationApp() {
         }
     });
 
-    if (error) {
-        alert('新增失敗：' + error.message);
-    } else {
+    if (error) alert('新增失敗：' + error.message);
+    else {
         alert(`使用者 ${addUserName} 已建立！`);
         setAddUserName('');
         setAddUserLast4('');
@@ -408,7 +407,6 @@ export default function RegistrationApp() {
   const handleAdminDeleteUser = async (targetId: string) => {
     if (!confirm('確定要刪除此使用者嗎？此動作無法復原！')) return;
     setLoading(true);
-
     if (process.env.NEXT_PUBLIC_SUPABASE_URL) {
         alert('提示：由於 Supabase 安全限制，前端無法直接刪除使用者。\n請使用 Supabase Dashboard 進行操作。');
     } else {
@@ -440,15 +438,10 @@ export default function RegistrationApp() {
         allNotes.forEach((note: any) => {
             let displayName = note.sign_name;
             let idPart = note.id_2 || '';
-            
-            // 如果 sign_name 已經包含 ID (舊資料格式)，嘗試解析
-            if (!displayName) {
-                displayName = '未知使用者';
-            } else if (displayName.includes('(')) {
+            if (!displayName) displayName = '未知使用者';
+            else if (displayName.includes('(')) {
                 const parts = displayName.split('(');
-                if (parts.length > 1) {
-                    idPart = parts[1].replace(')', '').trim();
-                }
+                if (parts.length > 1) idPart = parts[1].replace(')', '').trim();
             }
 
             if (!userMap.has(displayName)) {
@@ -460,7 +453,6 @@ export default function RegistrationApp() {
             }
             userMap.get(displayName).count += 1;
         });
-
         setAllUsers(Array.from(userMap.values()));
     } catch(e) { console.error('Fetch users error', e); }
   }, [supabase]);
@@ -491,7 +483,6 @@ export default function RegistrationApp() {
         fetchNotes(user);
         fetchBulletins();
         fetchOptions(); 
-        
         if (getDisplayNameOnly(user.email || '').toLowerCase() === ADMIN_ACCOUNT.toLowerCase()) {
            fetchAllUsers();
         }
@@ -540,7 +531,6 @@ export default function RegistrationApp() {
     if (formData.dharma_name && formData.dharma_name.length > 2) return alert('法名欄位限填2個字');
     
     const currentId2 = getIdLast4FromEmail(user.email || '');
-    // [修改] sign_name 寫入姓名 + ID
     const signNameCombined = `${getDisplayNameOnly(user.email || '')} (${currentId2})`;
 
     const insertData = {
@@ -593,21 +583,17 @@ export default function RegistrationApp() {
     if (!user) return;
     const AUTO_LOGOUT_TIME = 15 * 60 * 1000; 
     let timeoutId: NodeJS.Timeout;
-
     const performAutoLogout = () => {
       alert("您已閒置超過 15 分鐘，系統將自動登出以確保安全。");
       handleLogout();
     };
-
     const resetTimer = () => {
       clearTimeout(timeoutId);
       timeoutId = setTimeout(performAutoLogout, AUTO_LOGOUT_TIME);
     };
-
     const events = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart'];
     events.forEach(event => document.addEventListener(event, resetTimer));
     resetTimer();
-
     return () => {
       clearTimeout(timeoutId);
       events.forEach(event => document.removeEventListener(event, resetTimer));
@@ -617,23 +603,14 @@ export default function RegistrationApp() {
   const handleSignUp = async () => {
     if (!username || !idLast4 || !password) return alert("請輸入完整資料");
     if (idLast4.length !== 4) return alert("身分證後四碼必須為 4 位數字");
-
     setLoading(true);
     const uniqueId = username + idLast4;
     const email = encodeName(uniqueId) + FAKE_DOMAIN; 
-    
     const { error } = await supabase.auth.signUp({ 
       email, 
       password,
-      options: {
-        data: {
-          display_name: username,
-          full_name: username,
-          id_last4: idLast4
-        }
-      }
+      options: { data: { display_name: username, full_name: username, id_last4: idLast4 } }
     });
-    
     if (error) alert('註冊失敗：' + error.message);
     else {
       alert('註冊成功！系統已為您登入。');
@@ -642,7 +619,6 @@ export default function RegistrationApp() {
       setFormData(prev => ({ ...prev, real_name: username }));
       fetchNotes(user);
       fetchBulletins();
-      // 管理員檢查
       if (username.toLowerCase() === ADMIN_ACCOUNT) {
           fetchAllUsers();
       }
@@ -656,16 +632,13 @@ export default function RegistrationApp() {
     setLoading(true);
     const uniqueId = username + idLast4;
     const email = encodeName(uniqueId) + FAKE_DOMAIN;
-
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) {
-      alert('登入失敗：' + error.message);
-    } else {
+    if (error) alert('登入失敗：' + error.message);
+    else {
       setUser(data.user);
       setFormData(prev => ({ ...prev, real_name: username }));
       fetchNotes(data.user);
       fetchBulletins();
-      // 管理員檢查
       if (username.toLowerCase() === ADMIN_ACCOUNT) {
           fetchAllUsers();
       }
@@ -818,10 +791,16 @@ export default function RegistrationApp() {
                  <div><label className="block text-sm font-medium text-gray-700 mb-1">4. 姓名 <span className="text-red-500">*必填</span></label><input type="text" className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900 focus:ring-2 focus:ring-amber-500" value={formData.real_name} onChange={(e) => setFormData({...formData, real_name: e.target.value})} /></div>
                  <div><label className="block text-sm font-medium text-gray-700 mb-1">5. 法名</label><input type="text" maxLength={2} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900" value={formData.dharma_name} onChange={(e) => setFormData({...formData, dharma_name: e.target.value})} /></div>
                  <div><label className="block text-sm font-medium text-gray-700 mb-1">6. 新增異動 <span className="text-red-500">*必填</span></label><select className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900" value={formData.action_type} onChange={(e) => setFormData({...formData, action_type: e.target.value})}><option value="新增">新增</option><option value="異動">異動</option></select></div>
-                 <div className="lg:col-span-2"><label className="block text-sm font-medium text-gray-700 mb-1">7, 8. 發心起日/時 <span className="text-red-500">*必填</span></label><div className="flex gap-2"><input type="date" className="flex-1 p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900" value={formData.start_date} onChange={(e) => setFormData({...formData, start_date: e.target.value})} /><input type="time" className="w-32 p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900" value={formData.start_time} onChange={(e) => setFormData({...formData, start_time: e.target.value})} /></div></div>
-                 <div className="lg:col-span-2"><label className="block text-sm font-medium text-gray-700 mb-1">9, 10. 發心迄日/時 <span className="text-red-500">*必填</span></label><div className="flex gap-2"><input type="date" className="flex-1 p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900" value={formData.end_date} onChange={(e) => setFormData({...formData, end_date: e.target.value})} /><input type="time" className="w-32 p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900" value={formData.end_time} onChange={(e) => setFormData({...formData, end_time: e.target.value})} /></div></div>
-                 <div className="md:col-span-2 lg:col-span-4"><label className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition"><input type="checkbox" className="w-5 h-5 text-amber-600 rounded focus:ring-amber-500" checked={formData.need_help} onChange={(e) => setFormData({...formData, need_help: e.target.checked})} /><span className="text-gray-700 font-medium">11. 是否需要協助報名 (是)</span></label></div>
-                 <div className="md:col-span-2 lg:col-span-4"><label className="block text-sm font-medium text-gray-700 mb-1">12. 備註</label><textarea rows={2} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900" value={formData.memo} onChange={(e) => setFormData({...formData, memo: e.target.value})} /></div>
+                 <div className="lg:col-span-2"><label className="block text-sm font-medium text-gray-700 mb-1">7. 發心起日/時 <span className="text-red-500">*必填</span></label><div className="flex gap-2"><input type="date" className="flex-1 p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900" value={formData.start_date} onChange={(e) => setFormData({...formData, start_date: e.target.value})} /><input type="time" className="flex-1 p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900" value={formData.start_time} onChange={(e) => setFormData({...formData, start_time: e.target.value})} /></div></div>
+                 <div className="lg:col-span-2"><label className="block text-sm font-medium text-gray-700 mb-1">8. 發心迄日/時 <span className="text-red-500">*必填</span></label><div className="flex gap-2"><input type="date" className="flex-1 p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900" value={formData.end_date} onChange={(e) => setFormData({...formData, end_date: e.target.value})} /><input type="time" className="flex-1 p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900" value={formData.end_time} onChange={(e) => setFormData({...formData, end_time: e.target.value})} /></div></div>
+                 <div className="md:col-span-2 lg:col-span-4">
+                   <label className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition">
+                     <input type="checkbox" className="w-5 h-5 text-amber-600 rounded focus:ring-amber-500" checked={formData.need_help} onChange={(e) => setFormData({...formData, need_help: e.target.checked})} />
+                     <span className="text-gray-700 font-medium">9. 是否需要協助報名 (是)</span>
+                   </label>
+                   <p className="text-xs text-gray-500 mt-1 ml-9">若在普台學校及中台週邊的居士，需師父協助報名，請勾選。</p>
+                 </div>
+                 <div className="md:col-span-2 lg:col-span-4"><label className="block text-sm font-medium text-gray-700 mb-1">10. 備註</label><textarea rows={2} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900" value={formData.memo} onChange={(e) => setFormData({...formData, memo: e.target.value})} /></div>
                </div>
                <button onClick={handleSubmit} className="w-full bg-amber-700 text-white py-4 rounded-lg font-bold hover:bg-amber-800 transition shadow-lg text-lg mt-8">送出發心資料</button>
             </div>
