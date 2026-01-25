@@ -10,11 +10,12 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 //
 // 1. 確保終端機已執行安裝: npm install @supabase/supabase-js
 // 2. [解除註解] 下方的「正式連線區塊 (A)」
-// 3. [刪除或註解] 下方的「模擬連線區塊 (B)」
+// 3. [刪除] 下方的「模擬連線區塊 (B)」的內容 (但請保留最上方的變數宣告)
 // ==========================================
 
+// --- 全域變數宣告 (請保留此處，避免刪除區塊後報錯) ---
 let mockUser: any = null;
-let mockDb: any = undefined;
+let mockDb: any = undefined; 
 
 // --- [A. 正式連線區塊] (請在 VS Code 中解除這裡的註解) ---
 /*
@@ -49,21 +50,26 @@ export default function RegistrationApp() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
+  // 預設登入後進入公告欄
   const [activeTab, setActiveTab] = useState<'form' | 'history' | 'admin_data' | 'admin_users' | 'bulletin'>('bulletin');
   const [filterMonth, setFilterMonth] = useState('');
 
+  // 公告欄位
   const [bulletinText, setBulletinText] = useState('');
   const [bulletinImage, setBulletinImage] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // 修改密碼相關 State
   const [showPwdModal, setShowPwdModal] = useState(false);
   const [newPassword, setNewPassword] = useState('');
   const [pwdTargetUser, setPwdTargetUser] = useState<any>(null);
 
+  // 管理員新增使用者相關 State
   const [addUserName, setAddUserName] = useState('');
   const [addUserLast4, setAddUserLast4] = useState('');
   const [addUserPwd, setAddUserPwd] = useState('');
 
+  // 設定管理員帳號
   const ADMIN_ACCOUNT = 'admin'; 
 
   const [formData, setFormData] = useState({
@@ -216,10 +222,12 @@ export default function RegistrationApp() {
 
   const handleDeleteBulletin = async (id: number) => {
     if (!confirm('確定要撤除此公告嗎？')) return;
+
     setLoading(true);
     const { error } = await supabase.from('bulletins').delete().eq('id', id);
-    if (error) alert('撤除失敗：' + error.message);
-    else {
+    if (error) {
+      alert('撤除失敗：' + error.message);
+    } else {
       alert('公告已撤除。');
       setBulletins(prev => prev.filter(b => b.id !== id));
       fetchBulletins(); 
@@ -295,7 +303,9 @@ export default function RegistrationApp() {
   };
 
   const fetchAllUsers = async () => {
-    if (mockDb.users) setAllUsers([...mockDb.users]); 
+    if (mockDb && mockDb.users) {
+        setAllUsers([...mockDb.users]); 
+    }
   };
 
   const fetchBulletins = async () => {
@@ -314,11 +324,9 @@ export default function RegistrationApp() {
       setUser(user);
       if (user) {
         const currentName = getDisplayNameOnly(user.email || '');
-        // 姓名欄位允許自由編輯，預設帶入登入者姓名
         setFormData(prev => ({ ...prev, real_name: currentName }));
         fetchNotes(user);
         fetchBulletins();
-        
         if (getDisplayNameOnly(user.email || '').toLowerCase() === ADMIN_ACCOUNT.toLowerCase()) {
            fetchAllUsers();
         }
@@ -333,7 +341,6 @@ export default function RegistrationApp() {
       const { data, error } = await supabase
         .from('notes')
         .select('*')
-        // [修改] 排序改為：發心起日 ASC, 發心起時 ASC (由近到遠，递增)
         // @ts-ignore
         .order('start_date', { ascending: true })
         // @ts-ignore
@@ -367,7 +374,6 @@ export default function RegistrationApp() {
     if (formData.monastery.length > 2) return alert('精舍欄位限填2個字');
     if (formData.dharma_name && formData.dharma_name.length > 2) return alert('法名欄位限填2個字');
     
-    // 取得 ID 後四碼
     const currentId2 = getIdLast4FromEmail(user.email || '');
 
     const insertData = {
@@ -385,7 +391,7 @@ export default function RegistrationApp() {
         team_big: '觀音隊',
         team_small: '第1小隊',
         monastery: '',
-        real_name: getDisplayNameOnly(user.email || ''), // 重置時帶回登入者，但可再次修改
+        real_name: getDisplayNameOnly(user.email || ''),
         dharma_name: '',
         action_type: '新增',
         start_date: '',
@@ -597,12 +603,6 @@ export default function RegistrationApp() {
           {activeTab === 'history' && (
             <div className="space-y-4 animate-fade-in">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* [修正] 歷史紀錄過濾：登入者只能看到自己的，管理員可以看到所有人的 (但前端這裡還是過濾一下顯示比較好，或者您希望管理員在歷史紀錄也看到所有人?)
-                    通常 "我的紀錄" 應該只顯示自己的。 "全部報名資料" 才是顯示所有人的。
-                    因此這裡邏輯改為：只顯示 `user_id` 相符的，或者 `sign_name` (填表人) 相符的。
-                    注意：如果是 Admin，他也可能有自己的報名紀錄。
-                    這裡暫時維持：Admin 看到全部 (方便測試)，User 只看到自己的。
-                */}
                 {notes.filter(n => isAdmin || n.user_id === user?.id || n.sign_name === getDisplayNameOnly(user?.email || '')).map((note) => {
                   const completed = isExpired(note.end_date, note.end_time);
                   return (
@@ -636,17 +636,29 @@ export default function RegistrationApp() {
                  <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden overflow-x-auto">
                    <table className="min-w-full divide-y divide-gray-200">
                      <thead className="bg-gray-50">
-                       <tr><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">狀態</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">姓名 (ID)</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">法名</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">發心起日時</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">發心迄日時</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">填表人(帳號)</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">備註</th></tr>
+                       <tr>
+                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">狀態</th>
+                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">大隊/小隊</th>
+                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">精舍</th>
+                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">姓名 (ID)</th>
+                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">法名</th>
+                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">發心起日時</th>
+                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">發心迄日時</th>
+                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">填表人</th>
+                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">備註</th>
+                       </tr>
                      </thead>
                      <tbody className="bg-white divide-y divide-gray-200">
                        {getFilteredNotes().map((note) => (
                          <tr key={note.id} className="hover:bg-gray-50">
                            <td className="px-4 py-4 whitespace-nowrap"><span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${note.action_type === '新增' ? 'bg-blue-100 text-blue-800' : 'bg-orange-100 text-orange-800'}`}>{note.action_type}</span></td>
-                           <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">{note.real_name} <span className="text-gray-400">({note.id_2})</span></td>
+                           <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">{note.team_big} <span className="text-gray-400">|</span> {note.team_small}</td>
+                           <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">{note.monastery}</td>
+                           <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{note.real_name} <span className="text-xs text-gray-400">({note.id_2})</span></td>
                            <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{note.dharma_name || '-'}</td>
                            <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{note.start_date} {note.start_time}</td>
                            <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{note.end_date} {note.end_time}</td>
-                           <td className="px-4 py-4 text-sm text-gray-500">{note.sign_name || '-'}</td>
+                           <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{note.sign_name || '-'}</td>
                            <td className="px-4 py-4 text-sm text-gray-500 max-w-xs truncate">{note.memo || '-'}</td>
                          </tr>
                        ))}
