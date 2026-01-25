@@ -37,6 +37,8 @@ const createClient = () => {
 };
 
 
+
+
 export default function RegistrationApp() {
   const [notes, setNotes] = useState<any[]>([]);
   const [bulletins, setBulletins] = useState<any[]>([]);
@@ -141,7 +143,7 @@ export default function RegistrationApp() {
     }
     const headers = [
       "大隊", "小隊", "精舍", "姓名", "身分證後四碼", "法名", "動作", 
-      "開始日期", "開始時間", "結束日期", "結束時間", "需協助", "備註", "登記時間", "填表人"
+      "開始日期", "開始時間", "結束日期", "結束時間", "需協助", "備註", "登記時間", "填表人", "是否刪除"
     ];
     const csvRows = [
       headers.join(','),
@@ -160,7 +162,8 @@ export default function RegistrationApp() {
         note.need_help ? '是' : '否',
         `"${(note.memo || '').replace(/"/g, '""')}"`,
         new Date(note.created_at).toLocaleDateString(),
-        note.sign_name || '' 
+        note.sign_name || '',
+        note.is_deleted ? '已刪除' : ''
       ].join(','))
     ];
     const csvString = csvRows.join('\n');
@@ -228,20 +231,33 @@ export default function RegistrationApp() {
     setLoading(false);
   };
 
-  // [新增] 刪除報名資料功能
-  const handleDeleteNote = async (id: number) => {
-    if (!confirm('確定要刪除此報名資料嗎？刪除後無法復原。')) return;
+  // [修改] 報名資料軟刪除 (Toggle)
+  const handleToggleDeleteNote = async (id: number, currentStatus: boolean) => {
+    // 若要勾選刪除，跳出確認；若取消刪除，直接執行
+    if (!currentStatus && !confirm('確定要標記「刪除」此報名資料嗎？\n(資料仍會保留在列表中，但會顯示為刪除)')) return;
 
     setLoading(true);
-    const { error } = await supabase.from('notes').delete().eq('id', id);
+    const newStatus = !currentStatus;
+
+    if (mockDb) {
+        // 模擬環境
+        mockDb.notes = mockDb.notes.map((n: any) => n.id === id ? { ...n, is_deleted: newStatus } : n);
+        setNotes(prev => prev.map(n => n.id === id ? { ...n, is_deleted: newStatus } : n));
+        if (isAdmin) fetchAllUsers();
+        setLoading(false);
+        return;
+    }
+
+    const { error } = await supabase
+      .from('notes')
+      .update({ is_deleted: newStatus }) // 這裡只更新狀態，不物理刪除
+      .eq('id', id);
 
     if (error) {
-      alert('刪除失敗：' + error.message);
+      alert('更新失敗：' + error.message + '\n(請確認 Supabase 是否有建立 is_deleted boolean 欄位)');
     } else {
-      alert('報名資料已刪除。');
-      // 更新列表：從 notes 中移除該筆資料
-      setNotes(prev => prev.filter(n => n.id !== id));
-      // 如果是管理員，可能需要重新抓取全部統計
+      // 成功後更新本地狀態
+      setNotes(prev => prev.map(n => n.id === id ? { ...n, is_deleted: newStatus } : n));
       if (isAdmin) fetchAllUsers();
     }
     setLoading(false);
@@ -449,7 +465,8 @@ export default function RegistrationApp() {
       id_2: currentId2,
       user_id: user.id,
       sign_name: signNameOnly, 
-      content: `【${formData.action_type}】${formData.team_big}-${formData.team_small} ${formData.real_name}` 
+      content: `【${formData.action_type}】${formData.team_big}-${formData.team_small} ${formData.real_name}`,
+      is_deleted: false // 預設為未刪除
     };
 
     const { error } = await supabase.from('notes').insert([insertData]);
@@ -711,11 +728,15 @@ export default function RegistrationApp() {
           {activeTab === 'history' && (
             <div className="space-y-4 animate-fade-in">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* [修改] 歷史紀錄顯示邏輯：只顯示自己的資料 (filter by user_id) */}
                 {notes.filter(n => n.user_id === user?.id).map((note) => {
                   const completed = isExpired(note.end_date, note.end_time);
                   return (
-                    <div key={note.id} className={`bg-white p-5 rounded-xl shadow-sm border transition relative overflow-hidden ${completed ? 'border-gray-200 bg-gray-50/50' : 'border-amber-100 hover:border-amber-300'}`}>
+                    <div key={note.id} className={`bg-white p-5 rounded-xl shadow-sm border transition relative overflow-hidden ${completed ? 'border-gray-200 bg-gray-50/50' : 'border-amber-100 hover:border-amber-300'} ${note.is_deleted ? 'opacity-50 grayscale' : ''}`}>
                       {completed && <div className="absolute top-0 right-0 bg-gray-200 text-gray-500 text-xs font-bold px-3 py-1 rounded-bl-lg z-10">已圓滿</div>}
+                      {/* 如果已刪除，顯示刪除標籤 */}
+                      {note.is_deleted && <div className="absolute top-0 left-0 bg-red-100 text-red-600 text-xs font-bold px-3 py-1 rounded-br-lg z-10">已刪除</div>}
+                      
                       <div className="flex justify-between items-start mb-3">
                          <div className="flex items-center gap-2"><span className={`text-xs px-2 py-1 rounded-full text-white ${note.action_type === '新增' ? 'bg-blue-100 text-blue-800' : 'bg-orange-100 text-orange-800'}`}>{note.action_type}</span><h4 className={`font-bold text-lg ${completed ? 'text-gray-500' : 'text-amber-900'}`}>{note.team_big} - {note.team_small}</h4></div>
                       </div>
@@ -723,7 +744,7 @@ export default function RegistrationApp() {
                          <div className="grid grid-cols-2 gap-2"><p><span className="text-gray-400">精舍：</span>{note.monastery}</p><p><span className="text-gray-400">姓名：</span>{note.real_name}</p><p><span className="text-gray-400">法名：</span>{note.dharma_name || '-'}</p><p><span className="text-gray-400">協助：</span>{note.need_help ? '是' : '否'}</p></div>
                          <div className="border-t border-dashed border-gray-200 pt-2 mt-2"><p className="flex flex-col sm:flex-row sm:gap-2"><span className="text-gray-400 whitespace-nowrap">起：</span><span className={completed ? 'text-gray-500' : 'text-gray-800'}>{note.start_date} {note.start_time}</span></p><p className="flex flex-col sm:flex-row sm:gap-2"><span className="text-gray-400 whitespace-nowrap">迄：</span><span className={completed ? 'text-gray-500' : 'text-gray-800'}>{note.end_date} {note.end_time}</span></p></div>
                          
-                         {/* [修改] 填表人 (sign_name + id_2) */}
+                         {/* [修改] 顯示填表人 (sign_name + id_2) */}
                          <p className="text-xs text-gray-400 mt-2 border-t pt-2 border-dashed border-gray-100">
                            填表人：{note.sign_name ? `${note.sign_name} (${note.id_2})` : '-'}
                          </p>
@@ -736,8 +757,8 @@ export default function RegistrationApp() {
                                     type="checkbox" 
                                     className="w-4 h-4 text-red-600 rounded focus:ring-red-500 cursor-pointer"
                                     disabled={completed}
-                                    checked={false} // Always uncontrolled/reset after action
-                                    onChange={() => handleDeleteNote(note.id)}
+                                    checked={note.is_deleted || false} // 綁定狀態
+                                    onChange={() => handleToggleDeleteNote(note.id, note.is_deleted)}
                                 />
                             </label>
                          </div>
@@ -764,18 +785,24 @@ export default function RegistrationApp() {
                  <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden overflow-x-auto">
                    <table className="min-w-full divide-y divide-gray-200">
                      <thead className="bg-gray-50">
+                       {/* [修改] 欄位名稱調整 */}
                        <tr><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">狀態</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">大隊/小隊</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">精舍</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">姓名</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">法名</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">發心起日時</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">發心迄日時</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">填表人</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">備註</th></tr>
                      </thead>
                      <tbody className="bg-white divide-y divide-gray-200">
                        {getFilteredNotes().map((note) => (
-                         <tr key={note.id} className="hover:bg-gray-50">
-                           <td className="px-4 py-4 whitespace-nowrap"><span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${note.action_type === '新增' ? 'bg-blue-100 text-blue-800' : 'bg-orange-100 text-orange-800'}`}>{note.action_type}</span></td>
+                         <tr key={note.id} className={`hover:bg-gray-50 ${note.is_deleted ? 'bg-red-50 opacity-60' : ''}`}>
+                           <td className="px-4 py-4 whitespace-nowrap">
+                             <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${note.action_type === '新增' ? 'bg-blue-100 text-blue-800' : 'bg-orange-100 text-orange-800'}`}>{note.action_type}</span>
+                             {note.is_deleted && <span className="ml-2 px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">已刪除</span>}
+                           </td>
                            <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">{note.team_big} <span className="text-gray-400">|</span> {note.team_small}</td>
                            <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">{note.monastery}</td>
+                           {/* [修改] 姓名欄位只顯示姓名 */}
                            <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{note.real_name}</td>
                            <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{note.dharma_name || '-'}</td>
                            <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{note.start_date} {note.start_time}</td>
                            <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{note.end_date} {note.end_time}</td>
+                           {/* [修改] 填表人欄位：顯示 姓名 + (ID) */}
                            <td className="px-4 py-4 whitespace-nowrap text-sm text-blue-600 font-medium">{note.sign_name ? `${note.sign_name} (${note.id_2})` : '-'}</td>
                            <td className="px-4 py-4 text-sm text-gray-500 max-w-xs truncate">{note.memo || '-'}</td>
                          </tr>
@@ -817,6 +844,7 @@ export default function RegistrationApp() {
                         <tbody className="divide-y divide-gray-200">
                             {allUsers.length > 0 ? allUsers.map(u => (
                                 <tr key={u.id} className="hover:bg-gray-50">
+                                    {/* [修改] 顯示欄位：姓名、ID、筆數 */}
                                     <td className="px-4 py-3 text-sm font-medium text-gray-900">{u.display_name}</td>
                                     <td className="px-4 py-3 text-sm text-gray-500">{u.id_last4}</td>
                                     <td className="px-4 py-3 text-right text-sm font-medium text-blue-600">{u.count} 筆</td>
