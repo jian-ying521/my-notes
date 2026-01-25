@@ -11,6 +11,10 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 // 1. 確保終端機已執行安裝: npm install @supabase/supabase-js
 // 2. [解除註解] 下方的「正式連線區塊 (A)」
 // 3. [刪除] 下方的「模擬連線區塊 (B)」的內容 (但請保留最上方的變數宣告)
+//
+// [🛠️ 資料庫權限修復]
+// 如果勾選刪除無效，請到 Supabase SQL Editor 執行以下指令開啟 Update 權限：
+// create policy "Enable update for own notes" on notes for update to authenticated using (auth.uid() = user_id);
 // ==========================================
 
 // --- 全域變數宣告 (請保留此處，避免刪除區塊後報錯) ---
@@ -231,9 +235,8 @@ export default function RegistrationApp() {
     setLoading(false);
   };
 
-  // [修改] 報名資料軟刪除 (Toggle)
+  // [修改] 報名資料軟刪除 (更新版：加入回傳檢查)
   const handleToggleDeleteNote = async (id: number, currentStatus: boolean) => {
-    // 若要勾選刪除，跳出確認；若取消刪除，直接執行
     if (!currentStatus && !confirm('確定要標記「刪除」此報名資料嗎？\n(資料仍會保留在列表中，但會顯示為刪除)')) return;
 
     setLoading(true);
@@ -248,15 +251,20 @@ export default function RegistrationApp() {
         return;
     }
 
-    const { error } = await supabase
+    // 正式環境：嘗試更新
+    const { data, error } = await supabase
       .from('notes')
-      .update({ is_deleted: newStatus }) // 這裡只更新狀態，不物理刪除
-      .eq('id', id);
+      .update({ is_deleted: newStatus })
+      .eq('id', id)
+      .select(); // 嘗試回傳更新後的資料
 
     if (error) {
-      alert('更新失敗：' + error.message + '\n(請確認 Supabase 是否有建立 is_deleted boolean 欄位)');
+      alert('更新失敗：' + error.message);
+    } else if (data && data.length === 0) {
+      // 這裡如果回傳空陣列，代表 RLS 擋下了 update 操作
+      alert('權限錯誤：無法修改資料。\n請確認 Supabase 已建立 UPDATE 的 RLS 政策。\n(請參考檔案最上方的 SQL 指令)');
     } else {
-      // 成功後更新本地狀態
+      // 成功
       setNotes(prev => prev.map(n => n.id === id ? { ...n, is_deleted: newStatus } : n));
       if (isAdmin) fetchAllUsers();
     }
@@ -342,7 +350,6 @@ export default function RegistrationApp() {
 
   const fetchAllUsers = useCallback(async () => {
     let allNotes = [];
-    
     try {
         if (mockDb && mockDb.notes) {
             allNotes = [...mockDb.notes];
@@ -358,10 +365,8 @@ export default function RegistrationApp() {
         allNotes.forEach((note: any) => {
             let displayName = note.sign_name;
             let idPart = note.id_2 || '';
-
-            if (!displayName) {
-                displayName = '未知使用者';
-            } else if (displayName.includes('(')) {
+            if (!displayName) displayName = '未知使用者';
+            else if (displayName.includes('(')) {
                 const parts = displayName.split('(');
                 if (parts.length > 1) {
                     idPart = parts[1].replace(')', '').trim();
@@ -377,11 +382,8 @@ export default function RegistrationApp() {
             }
             userMap.get(displayName).count += 1;
         });
-
         setAllUsers(Array.from(userMap.values()));
-    } catch(e) {
-        console.error('Fetch users error', e);
-    }
+    } catch(e) { console.error('Fetch users error', e); }
   }, [supabase]);
 
   useEffect(() => {
@@ -409,7 +411,6 @@ export default function RegistrationApp() {
         setFormData(prev => ({ ...prev, real_name: currentName }));
         fetchNotes(user);
         fetchBulletins();
-        
         if (getDisplayNameOnly(user.email || '').toLowerCase() === ADMIN_ACCOUNT.toLowerCase()) {
            fetchAllUsers();
         }
@@ -441,9 +442,7 @@ export default function RegistrationApp() {
       await supabase.from('login_history').insert([
         { real_name: name, action: action }
       ]);
-    } catch (e) {
-      console.error('紀錄登入失敗', e);
-    }
+    } catch (e) { console.error('紀錄登入失敗', e); }
   };
 
   const handleSubmit = async () => {
@@ -458,6 +457,7 @@ export default function RegistrationApp() {
     if (formData.dharma_name && formData.dharma_name.length > 2) return alert('法名欄位限填2個字');
     
     const currentId2 = getIdLast4FromEmail(user.email || '');
+    // [修改] sign_name 只寫入姓名 (不再包含 ID)
     const signNameOnly = getDisplayNameOnly(user.email || '');
 
     const insertData = {
@@ -466,7 +466,7 @@ export default function RegistrationApp() {
       user_id: user.id,
       sign_name: signNameOnly, 
       content: `【${formData.action_type}】${formData.team_big}-${formData.team_small} ${formData.real_name}`,
-      is_deleted: false // 預設為未刪除
+      is_deleted: false 
     };
 
     const { error } = await supabase.from('notes').insert([insertData]);
@@ -510,21 +510,17 @@ export default function RegistrationApp() {
     if (!user) return;
     const AUTO_LOGOUT_TIME = 15 * 60 * 1000; 
     let timeoutId: NodeJS.Timeout;
-
     const performAutoLogout = () => {
       alert("您已閒置超過 15 分鐘，系統將自動登出以確保安全。");
       handleLogout();
     };
-
     const resetTimer = () => {
       clearTimeout(timeoutId);
       timeoutId = setTimeout(performAutoLogout, AUTO_LOGOUT_TIME);
     };
-
     const events = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart'];
     events.forEach(event => document.addEventListener(event, resetTimer));
     resetTimer();
-
     return () => {
       clearTimeout(timeoutId);
       events.forEach(event => document.removeEventListener(event, resetTimer));
@@ -534,23 +530,14 @@ export default function RegistrationApp() {
   const handleSignUp = async () => {
     if (!username || !idLast4 || !password) return alert("請輸入完整資料");
     if (idLast4.length !== 4) return alert("身分證後四碼必須為 4 位數字");
-
     setLoading(true);
     const uniqueId = username + idLast4;
     const email = encodeName(uniqueId) + FAKE_DOMAIN; 
-    
     const { error } = await supabase.auth.signUp({ 
       email, 
       password,
-      options: {
-        data: {
-          display_name: username,
-          full_name: username,
-          id_last4: idLast4
-        }
-      }
+      options: { data: { display_name: username, full_name: username, id_last4: idLast4 } }
     });
-    
     if (error) alert('註冊失敗：' + error.message);
     else {
       alert('註冊成功！系統已為您登入。');
@@ -572,7 +559,6 @@ export default function RegistrationApp() {
     setLoading(true);
     const uniqueId = username + idLast4;
     const email = encodeName(uniqueId) + FAKE_DOMAIN;
-
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) {
       alert('登入失敗：' + error.message);
@@ -728,7 +714,7 @@ export default function RegistrationApp() {
           {activeTab === 'history' && (
             <div className="space-y-4 animate-fade-in">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* [修改] 歷史紀錄顯示邏輯：只顯示自己的資料 (filter by user_id) */}
+                {/* [修改] 歷史紀錄過濾：只顯示自己的資料 (filter by user_id) */}
                 {notes.filter(n => n.user_id === user?.id).map((note) => {
                   const completed = isExpired(note.end_date, note.end_time);
                   return (
