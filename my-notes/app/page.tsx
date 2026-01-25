@@ -37,8 +37,6 @@ const createClient = () => {
 };
 
 
-
-
 export default function RegistrationApp() {
   const [notes, setNotes] = useState<any[]>([]);
   const [bulletins, setBulletins] = useState<any[]>([]);
@@ -50,26 +48,21 @@ export default function RegistrationApp() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // 預設登入後進入公告欄
   const [activeTab, setActiveTab] = useState<'form' | 'history' | 'admin_data' | 'admin_users' | 'bulletin'>('bulletin');
   const [filterMonth, setFilterMonth] = useState('');
 
-  // 公告欄位
   const [bulletinText, setBulletinText] = useState('');
   const [bulletinImage, setBulletinImage] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // 修改密碼相關 State
   const [showPwdModal, setShowPwdModal] = useState(false);
   const [newPassword, setNewPassword] = useState('');
   const [pwdTargetUser, setPwdTargetUser] = useState<any>(null);
 
-  // 管理員新增使用者相關 State
   const [addUserName, setAddUserName] = useState('');
   const [addUserLast4, setAddUserLast4] = useState('');
   const [addUserPwd, setAddUserPwd] = useState('');
 
-  // 設定管理員帳號
   const ADMIN_ACCOUNT = 'admin'; 
 
   const [formData, setFormData] = useState({
@@ -235,6 +228,25 @@ export default function RegistrationApp() {
     setLoading(false);
   };
 
+  // [新增] 刪除報名資料功能
+  const handleDeleteNote = async (id: number) => {
+    if (!confirm('確定要刪除此報名資料嗎？刪除後無法復原。')) return;
+
+    setLoading(true);
+    const { error } = await supabase.from('notes').delete().eq('id', id);
+
+    if (error) {
+      alert('刪除失敗：' + error.message);
+    } else {
+      alert('報名資料已刪除。');
+      // 更新列表：從 notes 中移除該筆資料
+      setNotes(prev => prev.filter(n => n.id !== id));
+      // 如果是管理員，可能需要重新抓取全部統計
+      if (isAdmin) fetchAllUsers();
+    }
+    setLoading(false);
+  };
+
   const handleChangePassword = async () => {
     if (!newPassword || newPassword.length < 6) {
       return alert('密碼長度需至少 6 碼');
@@ -289,24 +301,36 @@ export default function RegistrationApp() {
         setAddUserName('');
         setAddUserLast4('');
         setAddUserPwd('');
-        // 重新整理資料
-        fetchNotes();
         fetchAllUsers(); 
     }
     setLoading(false);
   };
 
-  // [修改] 讀取所有使用者 (統計報名筆數)
+  const handleAdminDeleteUser = async (targetId: string) => {
+    if (!confirm('確定要刪除此使用者嗎？此動作無法復原！')) return;
+    setLoading(true);
+
+    if (process.env.NEXT_PUBLIC_SUPABASE_URL) {
+        alert('提示：由於 Supabase 安全限制，前端無法直接刪除使用者。\n請使用 Supabase Dashboard 進行操作。');
+    } else {
+        // @ts-ignore
+        if (supabase.auth.admin && supabase.auth.admin.deleteUser) {
+             // @ts-ignore
+             await supabase.auth.admin.deleteUser(targetId);
+             alert('[模擬] 使用者已刪除');
+             fetchAllUsers(); 
+        }
+    }
+    setLoading(false);
+  };
+
   const fetchAllUsers = useCallback(async () => {
     let allNotes = [];
     
-    // 1. 嘗試讀取資料
     try {
         if (mockDb && mockDb.notes) {
-            // 模擬模式
             allNotes = [...mockDb.notes];
         } else {
-            // 正式模式
             const { data } = await supabase
                 .from('notes')
                 .select('sign_name, id_2')
@@ -314,18 +338,14 @@ export default function RegistrationApp() {
             allNotes = data || [];
         }
 
-        // 2. 統計
         const userMap = new Map();
         allNotes.forEach((note: any) => {
-            // 填表人資訊 (優先使用 sign_name，格式: 姓名 (ID))
             let displayName = note.sign_name;
             let idPart = note.id_2 || '';
 
             if (!displayName) {
-                // 如果舊資料沒有 sign_name，使用 fallback
                 displayName = '未知使用者';
             } else if (displayName.includes('(')) {
-                // 嘗試從 sign_name 解析出純姓名與 ID
                 const parts = displayName.split('(');
                 if (parts.length > 1) {
                     idPart = parts[1].replace(')', '').trim();
@@ -422,8 +442,6 @@ export default function RegistrationApp() {
     if (formData.dharma_name && formData.dharma_name.length > 2) return alert('法名欄位限填2個字');
     
     const currentId2 = getIdLast4FromEmail(user.email || '');
-    // sign_name 這裡其實已經只存了姓名，ID後四碼我們用 id_2 欄位
-    // 但為了顯示方便，我們這裡還是存 "姓名"，顯示時再組合
     const signNameOnly = getDisplayNameOnly(user.email || '');
 
     const insertData = {
@@ -452,7 +470,6 @@ export default function RegistrationApp() {
         memo: ''
       });
       fetchNotes(user); 
-      // 若是管理員，同時更新統計
       if (isAdmin) fetchAllUsers();
       setActiveTab('history');
     } else {
@@ -525,7 +542,6 @@ export default function RegistrationApp() {
       setFormData(prev => ({ ...prev, real_name: username }));
       fetchNotes(user);
       fetchBulletins();
-      // 管理員檢查
       if (username.toLowerCase() === ADMIN_ACCOUNT) {
           fetchAllUsers();
       }
@@ -548,7 +564,6 @@ export default function RegistrationApp() {
       setFormData(prev => ({ ...prev, real_name: username }));
       fetchNotes(data.user);
       fetchBulletins();
-      // 管理員檢查
       if (username.toLowerCase() === ADMIN_ACCOUNT) {
           fetchAllUsers();
       }
@@ -707,8 +722,26 @@ export default function RegistrationApp() {
                       <div className="text-sm text-gray-700 space-y-2">
                          <div className="grid grid-cols-2 gap-2"><p><span className="text-gray-400">精舍：</span>{note.monastery}</p><p><span className="text-gray-400">姓名：</span>{note.real_name}</p><p><span className="text-gray-400">法名：</span>{note.dharma_name || '-'}</p><p><span className="text-gray-400">協助：</span>{note.need_help ? '是' : '否'}</p></div>
                          <div className="border-t border-dashed border-gray-200 pt-2 mt-2"><p className="flex flex-col sm:flex-row sm:gap-2"><span className="text-gray-400 whitespace-nowrap">起：</span><span className={completed ? 'text-gray-500' : 'text-gray-800'}>{note.start_date} {note.start_time}</span></p><p className="flex flex-col sm:flex-row sm:gap-2"><span className="text-gray-400 whitespace-nowrap">迄：</span><span className={completed ? 'text-gray-500' : 'text-gray-800'}>{note.end_date} {note.end_time}</span></p></div>
-                         {/* [修改] 顯示填表人 (sign_name + id_2) */}
-                         <p className="text-xs text-gray-400 mt-2 border-t pt-2 border-dashed border-gray-100">填表人：{note.sign_name ? `${note.sign_name} (${note.id_2})` : '-'}</p>
+                         
+                         {/* [修改] 填表人 (sign_name + id_2) */}
+                         <p className="text-xs text-gray-400 mt-2 border-t pt-2 border-dashed border-gray-100">
+                           填表人：{note.sign_name ? `${note.sign_name} (${note.id_2})` : '-'}
+                         </p>
+
+                         {/* [新增] 刪除報名表 Checkbox */}
+                         <div className="mt-3 pt-2 border-t border-gray-100 flex justify-end">
+                            <label className={`flex items-center gap-2 cursor-pointer select-none ${completed ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                                <span className={`text-sm font-bold ${completed ? 'text-gray-400' : 'text-red-500'}`}>刪除報名表</span>
+                                <input 
+                                    type="checkbox" 
+                                    className="w-4 h-4 text-red-600 rounded focus:ring-red-500 cursor-pointer"
+                                    disabled={completed}
+                                    checked={false} // Always uncontrolled/reset after action
+                                    onChange={() => handleDeleteNote(note.id)}
+                                />
+                            </label>
+                         </div>
+
                          {note.memo && <div className="bg-amber-50 p-2 rounded text-xs text-gray-600 mt-2"><span className="font-bold text-amber-700">想說的話：</span>{note.memo}</div>}
                       </div>
                       <p className="text-xs text-right text-gray-300 mt-3">登記於：{new Date(note.created_at).toLocaleDateString()}</p>
@@ -743,7 +776,6 @@ export default function RegistrationApp() {
                            <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{note.dharma_name || '-'}</td>
                            <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{note.start_date} {note.start_time}</td>
                            <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{note.end_date} {note.end_time}</td>
-                           {/* [修改] 填表人欄位：顯示 姓名 + (ID) */}
                            <td className="px-4 py-4 whitespace-nowrap text-sm text-blue-600 font-medium">{note.sign_name ? `${note.sign_name} (${note.id_2})` : '-'}</td>
                            <td className="px-4 py-4 text-sm text-gray-500 max-w-xs truncate">{note.memo || '-'}</td>
                          </tr>
