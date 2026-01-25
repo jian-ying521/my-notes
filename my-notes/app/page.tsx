@@ -38,7 +38,6 @@ const createClient = () => {
 
 
 
-
 export default function RegistrationApp() {
   const [notes, setNotes] = useState<any[]>([]);
   const [bulletins, setBulletins] = useState<any[]>([]);
@@ -48,9 +47,7 @@ export default function RegistrationApp() {
   // 選項資料 State
   const [teamBigOptions, setTeamBigOptions] = useState<any[]>([]);
   const [teamSmallOptions, setTeamSmallOptions] = useState<any[]>([]);
-  // 新增選項輸入框
   const [newOptionValue, setNewOptionValue] = useState('');
-  // [新增] 追蹤當前正在編輯的類別 (team_big or team_small)
   const [selectedCategory, setSelectedCategory] = useState('');
   
   const [username, setUsername] = useState('');
@@ -58,7 +55,7 @@ export default function RegistrationApp() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // [預設] 登入後進入公告欄
+  // 預設登入後進入公告欄
   const [activeTab, setActiveTab] = useState<'form' | 'history' | 'admin_data' | 'admin_users' | 'admin_settings' | 'bulletin'>('bulletin');
   const [filterMonth, setFilterMonth] = useState('');
 
@@ -160,7 +157,6 @@ export default function RegistrationApp() {
       
       if (bigData && bigData.length > 0) {
           setTeamBigOptions(bigData);
-          // 如果表單尚未選擇，設定預設值
           setFormData(prev => ({...prev, team_big: prev.team_big || bigData[0].value}));
       } else {
           setTeamBigOptions([{id: 0, value: '觀音隊'}]);
@@ -182,7 +178,6 @@ export default function RegistrationApp() {
     } catch (e) { console.error(e); }
   }, [supabase]);
 
-  // 新增選項
   const handleAddOption = async (category: 'team_big' | 'team_small') => {
       if (!newOptionValue.trim()) return alert('請輸入選項名稱');
       setLoading(true);
@@ -197,7 +192,6 @@ export default function RegistrationApp() {
       setLoading(false);
   };
 
-  // 刪除選項
   const handleDeleteOption = async (id: number) => {
       if (!confirm('確定刪除此選項？')) return;
       setLoading(true);
@@ -215,7 +209,7 @@ export default function RegistrationApp() {
     }
     const headers = [
       "大隊", "小隊", "精舍", "姓名", "身分證後四碼", "法名", "動作", 
-      "開始日期", "開始時間", "結束日期", "結束時間", "需協助", "備註", "登記時間", "填表人"
+      "開始日期", "開始時間", "結束日期", "結束時間", "需協助", "備註", "登記時間", "填表人", "是否刪除"
     ];
     const csvRows = [
       headers.join(','),
@@ -234,7 +228,8 @@ export default function RegistrationApp() {
         note.need_help ? '是' : '否',
         `"${(note.memo || '').replace(/"/g, '""')}"`,
         new Date(note.created_at).toLocaleDateString(),
-        note.sign_name || '' 
+        note.sign_name || '',
+        note.is_deleted ? '已刪除' : ''
       ].join(','))
     ];
     const csvString = csvRows.join('\n');
@@ -394,24 +389,6 @@ export default function RegistrationApp() {
     setLoading(false);
   };
 
-  const handleAdminDeleteUser = async (targetId: string) => {
-    if (!confirm('確定要刪除此使用者嗎？此動作無法復原！')) return;
-    setLoading(true);
-
-    if (process.env.NEXT_PUBLIC_SUPABASE_URL) {
-        alert('提示：由於 Supabase 安全限制，前端無法直接刪除使用者。\n請使用 Supabase Dashboard 進行操作。');
-    } else {
-        // @ts-ignore
-        if (supabase.auth.admin && supabase.auth.admin.deleteUser) {
-             // @ts-ignore
-             await supabase.auth.admin.deleteUser(targetId);
-             alert('[模擬] 使用者已刪除');
-             fetchAllUsers(); 
-        }
-    }
-    setLoading(false);
-  };
-
   const fetchAllUsers = useCallback(async () => {
     let allNotes = [];
     try {
@@ -432,7 +409,9 @@ export default function RegistrationApp() {
             if (!displayName) displayName = '未知使用者';
             else if (displayName.includes('(')) {
                 const parts = displayName.split('(');
-                if (parts.length > 1) idPart = parts[1].replace(')', '').trim();
+                if (parts.length > 1) {
+                    idPart = parts[1].replace(')', '').trim();
+                }
             }
 
             if (!userMap.has(displayName)) {
@@ -444,6 +423,7 @@ export default function RegistrationApp() {
             }
             userMap.get(displayName).count += 1;
         });
+
         setAllUsers(Array.from(userMap.values()));
     } catch(e) { console.error('Fetch users error', e); }
   }, [supabase]);
@@ -537,8 +517,10 @@ export default function RegistrationApp() {
     const { error } = await supabase.from('notes').insert([insertData]);
     if (!error) {
       alert('資料送出成功！');
-      setFormData(prev => ({
-        ...prev,
+      setFormData({
+        team_big: '觀音隊',
+        team_small: '第1小隊',
+        monastery: '',
         real_name: getDisplayNameOnly(user.email || ''),
         dharma_name: '',
         action_type: '新增',
@@ -548,7 +530,7 @@ export default function RegistrationApp() {
         end_time: '',
         need_help: false,
         memo: ''
-      }));
+      });
       fetchNotes(user); 
       if (isAdmin) fetchAllUsers();
       setActiveTab('history');
@@ -622,7 +604,6 @@ export default function RegistrationApp() {
       setFormData(prev => ({ ...prev, real_name: username }));
       fetchNotes(user);
       fetchBulletins();
-      // 管理員檢查
       if (username.toLowerCase() === ADMIN_ACCOUNT) {
           fetchAllUsers();
       }
@@ -645,7 +626,6 @@ export default function RegistrationApp() {
       setFormData(prev => ({ ...prev, real_name: username }));
       fetchNotes(data.user);
       fetchBulletins();
-      // 管理員檢查
       if (username.toLowerCase() === ADMIN_ACCOUNT) {
           fetchAllUsers();
       }
