@@ -38,6 +38,7 @@ const createClient = () => {
 
 
 
+
 export default function RegistrationApp() {
   const [notes, setNotes] = useState<any[]>([]);
   const [bulletins, setBulletins] = useState<any[]>([]);
@@ -49,6 +50,7 @@ export default function RegistrationApp() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
+  // 預設登入後進入公告欄
   const [activeTab, setActiveTab] = useState<'form' | 'history' | 'admin_data' | 'admin_users' | 'bulletin'>('bulletin');
   const [filterMonth, setFilterMonth] = useState('');
 
@@ -244,7 +246,11 @@ export default function RegistrationApp() {
       if (error) alert('修改失敗：' + error.message);
       else alert('密碼修改成功！');
     } else {
-      alert('無法在前端修改他人密碼，請使用後端 API。');
+      if (process.env.NEXT_PUBLIC_SUPABASE_URL) {
+          alert('提示：由於 Supabase 安全限制，正式環境中無法在前端直接修改他人密碼。\n請使用 Supabase Dashboard 或後端 API 發送重設信。');
+      } else {
+          alert(`[模擬] 已強制修改使用者 ${pwdTargetUser.display_name} 的密碼為: ${newPassword}`);
+      }
     }
 
     setLoading(false);
@@ -290,7 +296,7 @@ export default function RegistrationApp() {
     setLoading(false);
   };
 
-  // [修改] 統計報名者與筆數
+  // [修改] 讀取所有使用者 (統計報名筆數)
   const fetchAllUsers = useCallback(async () => {
     let allNotes = [];
     
@@ -328,7 +334,7 @@ export default function RegistrationApp() {
 
             if (!userMap.has(displayName)) {
                 userMap.set(displayName, {
-                    display_name: displayName, // 這裡直接顯示完整的 "姓名 (ID)"
+                    display_name: displayName, 
                     id_last4: idPart,
                     count: 0
                 });
@@ -342,7 +348,6 @@ export default function RegistrationApp() {
     }
   }, [supabase]);
 
-  // [新增] 監聽頁籤切換，自動重新抓取使用者列表
   useEffect(() => {
     if (activeTab === 'admin_users' && isAdmin) {
         fetchAllUsers();
@@ -368,6 +373,10 @@ export default function RegistrationApp() {
         setFormData(prev => ({ ...prev, real_name: currentName }));
         fetchNotes(user);
         fetchBulletins();
+        
+        if (getDisplayNameOnly(user.email || '').toLowerCase() === ADMIN_ACCOUNT.toLowerCase()) {
+           fetchAllUsers();
+        }
       }
     };
     getUser();
@@ -413,13 +422,15 @@ export default function RegistrationApp() {
     if (formData.dharma_name && formData.dharma_name.length > 2) return alert('法名欄位限填2個字');
     
     const currentId2 = getIdLast4FromEmail(user.email || '');
-    const signNameCombined = `${getDisplayNameOnly(user.email || '')} (${currentId2})`;
+    // sign_name 這裡其實已經只存了姓名，ID後四碼我們用 id_2 欄位
+    // 但為了顯示方便，我們這裡還是存 "姓名"，顯示時再組合
+    const signNameOnly = getDisplayNameOnly(user.email || '');
 
     const insertData = {
       ...formData,
       id_2: currentId2,
       user_id: user.id,
-      sign_name: signNameCombined, 
+      sign_name: signNameOnly, 
       content: `【${formData.action_type}】${formData.team_big}-${formData.team_small} ${formData.real_name}` 
     };
 
@@ -514,6 +525,7 @@ export default function RegistrationApp() {
       setFormData(prev => ({ ...prev, real_name: username }));
       fetchNotes(user);
       fetchBulletins();
+      // 管理員檢查
       if (username.toLowerCase() === ADMIN_ACCOUNT) {
           fetchAllUsers();
       }
@@ -536,6 +548,7 @@ export default function RegistrationApp() {
       setFormData(prev => ({ ...prev, real_name: username }));
       fetchNotes(data.user);
       fetchBulletins();
+      // 管理員檢查
       if (username.toLowerCase() === ADMIN_ACCOUNT) {
           fetchAllUsers();
       }
@@ -659,16 +672,22 @@ export default function RegistrationApp() {
                <h3 className="text-xl font-bold text-amber-900 mb-6 flex items-center gap-2 border-b border-amber-100 pb-4">🙏 發心報名資料</h3>
                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                  {/* ... Form fields ... */}
-                 <div><label className="block text-sm font-medium text-gray-700 mb-1">1. 大隊</label><select className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900" value={formData.team_big} onChange={(e) => setFormData({...formData, team_big: e.target.value})}><option value="觀音隊">觀音隊</option><option value="文殊隊">文殊隊</option><option value="普賢隊">普賢隊</option><option value="地藏隊">地藏隊</option><option value="彌勒隊">彌勒隊</option></select></div>
-                 <div><label className="block text-sm font-medium text-gray-700 mb-1">2. 小隊</label><select className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900" value={formData.team_small} onChange={(e) => setFormData({...formData, team_small: e.target.value})}><option value="第1小隊">第1小隊</option><option value="第2小隊">第2小隊</option><option value="第3小隊">第3小隊</option><option value="第4小隊">第4小隊</option><option value="第5小隊">第5小隊</option></select></div>
-                 <div><label className="block text-sm font-medium text-gray-700 mb-1">3. 精舍</label><input type="text" maxLength={2} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900" value={formData.monastery} onChange={(e) => setFormData({...formData, monastery: e.target.value})} /></div>
-                 <div><label className="block text-sm font-medium text-gray-700 mb-1">4. 姓名</label><input type="text" className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900 focus:ring-2 focus:ring-amber-500" value={formData.real_name} onChange={(e) => setFormData({...formData, real_name: e.target.value})} /></div>
+                 <div><label className="block text-sm font-medium text-gray-700 mb-1">1. 大隊 <span className="text-red-500">*必填</span></label><select className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900" value={formData.team_big} onChange={(e) => setFormData({...formData, team_big: e.target.value})}><option value="觀音隊">觀音隊</option><option value="文殊隊">文殊隊</option><option value="普賢隊">普賢隊</option><option value="地藏隊">地藏隊</option><option value="彌勒隊">彌勒隊</option></select></div>
+                 <div><label className="block text-sm font-medium text-gray-700 mb-1">2. 小隊 <span className="text-red-500">*必填</span></label><select className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900" value={formData.team_small} onChange={(e) => setFormData({...formData, team_small: e.target.value})}><option value="第1小隊">第1小隊</option><option value="第2小隊">第2小隊</option><option value="第3小隊">第3小隊</option><option value="第4小隊">第4小隊</option><option value="第5小隊">第5小隊</option></select></div>
+                 <div><label className="block text-sm font-medium text-gray-700 mb-1">3. 精舍 <span className="text-red-500">*必填 (限2字)</span></label><input type="text" maxLength={2} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900" value={formData.monastery} onChange={(e) => setFormData({...formData, monastery: e.target.value})} /></div>
+                 <div><label className="block text-sm font-medium text-gray-700 mb-1">4. 姓名 <span className="text-red-500">*必填</span></label><input type="text" className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900 focus:ring-2 focus:ring-amber-500" value={formData.real_name} onChange={(e) => setFormData({...formData, real_name: e.target.value})} /></div>
                  <div><label className="block text-sm font-medium text-gray-700 mb-1">5. 法名</label><input type="text" maxLength={2} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900" value={formData.dharma_name} onChange={(e) => setFormData({...formData, dharma_name: e.target.value})} /></div>
-                 <div><label className="block text-sm font-medium text-gray-700 mb-1">6. 新增異動</label><select className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900" value={formData.action_type} onChange={(e) => setFormData({...formData, action_type: e.target.value})}><option value="新增">新增</option><option value="異動">異動</option></select></div>
-                 <div className="lg:col-span-2"><label className="block text-sm font-medium text-gray-700 mb-1">7, 8. 發心起</label><div className="flex gap-2"><input type="date" className="flex-1 p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900" value={formData.start_date} onChange={(e) => setFormData({...formData, start_date: e.target.value})} /><input type="time" className="w-32 p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900" value={formData.start_time} onChange={(e) => setFormData({...formData, start_time: e.target.value})} /></div></div>
-                 <div className="lg:col-span-2"><label className="block text-sm font-medium text-gray-700 mb-1">9, 10. 發心迄</label><div className="flex gap-2"><input type="date" className="flex-1 p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900" value={formData.end_date} onChange={(e) => setFormData({...formData, end_date: e.target.value})} /><input type="time" className="w-32 p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900" value={formData.end_time} onChange={(e) => setFormData({...formData, end_time: e.target.value})} /></div></div>
-                 <div className="md:col-span-2 lg:col-span-4"><label className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition"><input type="checkbox" className="w-5 h-5 text-amber-600 rounded focus:ring-amber-500" checked={formData.need_help} onChange={(e) => setFormData({...formData, need_help: e.target.checked})} /><span className="text-gray-700 font-medium">11. 是否需要協助報名 (是)</span></label></div>
-                 <div className="md:col-span-2 lg:col-span-4"><label className="block text-sm font-medium text-gray-700 mb-1">12. 備註</label><textarea rows={2} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900" value={formData.memo} onChange={(e) => setFormData({...formData, memo: e.target.value})} /></div>
+                 <div><label className="block text-sm font-medium text-gray-700 mb-1">6. 新增異動 <span className="text-red-500">*必填</span></label><select className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900" value={formData.action_type} onChange={(e) => setFormData({...formData, action_type: e.target.value})}><option value="新增">新增</option><option value="異動">異動</option></select></div>
+                 <div className="lg:col-span-2"><label className="block text-sm font-medium text-gray-700 mb-1">7. 發心起日/時 <span className="text-red-500">*必填</span></label><div className="flex gap-2"><input type="date" className="flex-1 p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900" value={formData.start_date} onChange={(e) => setFormData({...formData, start_date: e.target.value})} /><input type="time" className="flex-1 p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900" value={formData.start_time} onChange={(e) => setFormData({...formData, start_time: e.target.value})} /></div></div>
+                 <div className="lg:col-span-2"><label className="block text-sm font-medium text-gray-700 mb-1">8. 發心迄日/時 <span className="text-red-500">*必填</span></label><div className="flex gap-2"><input type="date" className="flex-1 p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900" value={formData.end_date} onChange={(e) => setFormData({...formData, end_date: e.target.value})} /><input type="time" className="flex-1 p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900" value={formData.end_time} onChange={(e) => setFormData({...formData, end_time: e.target.value})} /></div></div>
+                 <div className="md:col-span-2 lg:col-span-4">
+                   <label className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition">
+                     <input type="checkbox" className="w-5 h-5 text-amber-600 rounded focus:ring-amber-500" checked={formData.need_help} onChange={(e) => setFormData({...formData, need_help: e.target.checked})} />
+                     <span className="text-gray-700 font-medium">9. 是否需要協助報名 (是)</span>
+                   </label>
+                   <p className="text-xs text-gray-500 mt-1 ml-9">若在普台學校及中台週邊的居士，需師父協助報名，請勾選。</p>
+                 </div>
+                 <div className="md:col-span-2 lg:col-span-4"><label className="block text-sm font-medium text-gray-700 mb-1">10. 備註</label><textarea rows={2} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900" value={formData.memo} onChange={(e) => setFormData({...formData, memo: e.target.value})} /></div>
                </div>
                <button onClick={handleSubmit} className="w-full bg-amber-700 text-white py-4 rounded-lg font-bold hover:bg-amber-800 transition shadow-lg text-lg mt-8">送出發心資料</button>
             </div>
@@ -677,7 +696,6 @@ export default function RegistrationApp() {
           {activeTab === 'history' && (
             <div className="space-y-4 animate-fade-in">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* [修改] 歷史紀錄顯示邏輯：只顯示自己的資料 (filter by user_id) */}
                 {notes.filter(n => n.user_id === user?.id).map((note) => {
                   const completed = isExpired(note.end_date, note.end_time);
                   return (
@@ -689,7 +707,7 @@ export default function RegistrationApp() {
                       <div className="text-sm text-gray-700 space-y-2">
                          <div className="grid grid-cols-2 gap-2"><p><span className="text-gray-400">精舍：</span>{note.monastery}</p><p><span className="text-gray-400">姓名：</span>{note.real_name}</p><p><span className="text-gray-400">法名：</span>{note.dharma_name || '-'}</p><p><span className="text-gray-400">協助：</span>{note.need_help ? '是' : '否'}</p></div>
                          <div className="border-t border-dashed border-gray-200 pt-2 mt-2"><p className="flex flex-col sm:flex-row sm:gap-2"><span className="text-gray-400 whitespace-nowrap">起：</span><span className={completed ? 'text-gray-500' : 'text-gray-800'}>{note.start_date} {note.start_time}</span></p><p className="flex flex-col sm:flex-row sm:gap-2"><span className="text-gray-400 whitespace-nowrap">迄：</span><span className={completed ? 'text-gray-500' : 'text-gray-800'}>{note.end_date} {note.end_time}</span></p></div>
-                         {/* [修改] 顯示填表人 + ID */}
+                         {/* [修改] 顯示填表人 (sign_name + id_2) */}
                          <p className="text-xs text-gray-400 mt-2 border-t pt-2 border-dashed border-gray-100">填表人：{note.sign_name ? `${note.sign_name} (${note.id_2})` : '-'}</p>
                          {note.memo && <div className="bg-amber-50 p-2 rounded text-xs text-gray-600 mt-2"><span className="font-bold text-amber-700">想說的話：</span>{note.memo}</div>}
                       </div>
@@ -713,7 +731,6 @@ export default function RegistrationApp() {
                  <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden overflow-x-auto">
                    <table className="min-w-full divide-y divide-gray-200">
                      <thead className="bg-gray-50">
-                       {/* [修改] 欄位名稱調整 */}
                        <tr><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">狀態</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">大隊/小隊</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">精舍</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">姓名</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">法名</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">發心起日時</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">發心迄日時</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">填表人</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">備註</th></tr>
                      </thead>
                      <tbody className="bg-white divide-y divide-gray-200">
@@ -722,13 +739,12 @@ export default function RegistrationApp() {
                            <td className="px-4 py-4 whitespace-nowrap"><span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${note.action_type === '新增' ? 'bg-blue-100 text-blue-800' : 'bg-orange-100 text-orange-800'}`}>{note.action_type}</span></td>
                            <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">{note.team_big} <span className="text-gray-400">|</span> {note.team_small}</td>
                            <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">{note.monastery}</td>
-                           {/* [修改] 姓名欄位只顯示姓名 */}
                            <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{note.real_name}</td>
                            <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{note.dharma_name || '-'}</td>
                            <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{note.start_date} {note.start_time}</td>
                            <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{note.end_date} {note.end_time}</td>
                            {/* [修改] 填表人欄位：顯示 姓名 + (ID) */}
-                           <td className="px-4 py-4 whitespace-nowrap text-sm text-blue-600 font-medium">{note.sign_name ? `${note.sign_name}` : '-'}</td>
+                           <td className="px-4 py-4 whitespace-nowrap text-sm text-blue-600 font-medium">{note.sign_name ? `${note.sign_name} (${note.id_2})` : '-'}</td>
                            <td className="px-4 py-4 text-sm text-gray-500 max-w-xs truncate">{note.memo || '-'}</td>
                          </tr>
                        ))}
@@ -755,12 +771,8 @@ export default function RegistrationApp() {
                    </div>
                  </div>
 
-                 {/* [修改] 提示訊息 */}
-                 <div className="flex justify-between items-center mb-2">
-                    <p className="text-sm text-gray-500">有報名過的使用者，才會出現在列表上</p>
-                    <p className="text-xs text-red-500 bg-red-50 px-2 py-1 rounded">⚠️ 欲修改使用者資料，請至後端，以註冊者權限修改</p>
-                 </div>
-                 
+                 {/* 使用者列表表格 */}
+                 <p className="text-sm text-gray-500 mb-2">有報名過的使用者，才會出現在列表上</p>
                  <div className="bg-white rounded-lg border border-gray-200 overflow-hidden overflow-x-auto">
                     <table className="min-w-full divide-y divide-gray-200">
                         <thead className="bg-gray-50">
@@ -773,7 +785,6 @@ export default function RegistrationApp() {
                         <tbody className="divide-y divide-gray-200">
                             {allUsers.length > 0 ? allUsers.map(u => (
                                 <tr key={u.id} className="hover:bg-gray-50">
-                                    {/* [修改] 顯示欄位：姓名、ID、筆數 */}
                                     <td className="px-4 py-3 text-sm font-medium text-gray-900">{u.display_name}</td>
                                     <td className="px-4 py-3 text-sm text-gray-500">{u.id_last4}</td>
                                     <td className="px-4 py-3 text-right text-sm font-medium text-blue-600">{u.count} 筆</td>
