@@ -283,47 +283,71 @@ export default function RegistrationApp() {
         setAddUserName('');
         setAddUserLast4('');
         setAddUserPwd('');
+        // 重新整理資料
+        fetchNotes();
         fetchAllUsers(); 
     }
     setLoading(false);
   };
 
-  // [修改] 讀取所有使用者 (統計報名筆數)
-  const fetchAllUsers = async () => {
-    // 取得所有報名資料
+  // [修改] 統計報名者與筆數
+  const fetchAllUsers = useCallback(async () => {
     let allNotes = [];
-    if (mockDb && mockDb.notes) {
-        allNotes = [...mockDb.notes];
-    } else {
-        const { data } = await supabase.from('notes').select('sign_name, id_2').order('created_at', { ascending: false });
-        allNotes = data || [];
+    
+    // 1. 嘗試讀取資料
+    try {
+        if (mockDb && mockDb.notes) {
+            // 模擬模式
+            allNotes = [...mockDb.notes];
+        } else {
+            // 正式模式
+            const { data } = await supabase
+                .from('notes')
+                .select('sign_name, id_2')
+                .order('created_at', { ascending: false });
+            allNotes = data || [];
+        }
+
+        // 2. 統計
+        const userMap = new Map();
+        allNotes.forEach((note: any) => {
+            // 填表人資訊 (優先使用 sign_name，格式: 姓名 (ID))
+            let displayName = note.sign_name;
+            let idPart = note.id_2 || '';
+
+            if (!displayName) {
+                // 如果舊資料沒有 sign_name，使用 fallback
+                displayName = '未知使用者';
+            } else if (displayName.includes('(')) {
+                // 嘗試從 sign_name 解析出純姓名與 ID
+                const parts = displayName.split('(');
+                if (parts.length > 1) {
+                    idPart = parts[1].replace(')', '').trim();
+                }
+            }
+
+            if (!userMap.has(displayName)) {
+                userMap.set(displayName, {
+                    display_name: displayName, // 這裡直接顯示完整的 "姓名 (ID)"
+                    id_last4: idPart,
+                    count: 0
+                });
+            }
+            userMap.get(displayName).count += 1;
+        });
+
+        setAllUsers(Array.from(userMap.values()));
+    } catch(e) {
+        console.error('Fetch users error', e);
     }
+  }, [supabase]);
 
-    // 統計每個 sign_name 的數量
-    const userMap = new Map();
-    allNotes.forEach(note => {
-        // 使用 sign_name 作為唯一識別 (格式: 姓名 (ID))
-        // 如果舊資料沒有 sign_name，嘗試組合
-        const displayName = note.sign_name || '未知使用者';
-        // 解析 ID
-        let idPart = '';
-        if (note.id_2) idPart = note.id_2;
-        else if (displayName.includes('(')) {
-             idPart = displayName.split('(')[1].replace(')', '');
-        }
-
-        if (!userMap.has(displayName)) {
-            userMap.set(displayName, {
-                display_name: displayName,
-                id_last4: idPart,
-                count: 0
-            });
-        }
-        userMap.get(displayName).count += 1;
-    });
-
-    setAllUsers(Array.from(userMap.values()));
-  };
+  // [新增] 監聽頁籤切換，自動重新抓取使用者列表
+  useEffect(() => {
+    if (activeTab === 'admin_users' && isAdmin) {
+        fetchAllUsers();
+    }
+  }, [activeTab, isAdmin, fetchAllUsers]);
 
   const fetchBulletins = async () => {
     try {
@@ -344,10 +368,6 @@ export default function RegistrationApp() {
         setFormData(prev => ({ ...prev, real_name: currentName }));
         fetchNotes(user);
         fetchBulletins();
-        
-        if (getDisplayNameOnly(user.email || '').toLowerCase() === ADMIN_ACCOUNT.toLowerCase()) {
-           fetchAllUsers();
-        }
       }
     };
     getUser();
@@ -421,7 +441,7 @@ export default function RegistrationApp() {
         memo: ''
       });
       fetchNotes(user); 
-      // 成功後如果身分是管理員，也更新使用者統計列表
+      // 若是管理員，同時更新統計
       if (isAdmin) fetchAllUsers();
       setActiveTab('history');
     } else {
@@ -494,7 +514,6 @@ export default function RegistrationApp() {
       setFormData(prev => ({ ...prev, real_name: username }));
       fetchNotes(user);
       fetchBulletins();
-      // 管理員檢查
       if (username.toLowerCase() === ADMIN_ACCOUNT) {
           fetchAllUsers();
       }
@@ -517,7 +536,6 @@ export default function RegistrationApp() {
       setFormData(prev => ({ ...prev, real_name: username }));
       fetchNotes(data.user);
       fetchBulletins();
-      // 管理員檢查
       if (username.toLowerCase() === ADMIN_ACCOUNT) {
           fetchAllUsers();
       }
@@ -672,7 +690,7 @@ export default function RegistrationApp() {
                          <div className="grid grid-cols-2 gap-2"><p><span className="text-gray-400">精舍：</span>{note.monastery}</p><p><span className="text-gray-400">姓名：</span>{note.real_name}</p><p><span className="text-gray-400">法名：</span>{note.dharma_name || '-'}</p><p><span className="text-gray-400">協助：</span>{note.need_help ? '是' : '否'}</p></div>
                          <div className="border-t border-dashed border-gray-200 pt-2 mt-2"><p className="flex flex-col sm:flex-row sm:gap-2"><span className="text-gray-400 whitespace-nowrap">起：</span><span className={completed ? 'text-gray-500' : 'text-gray-800'}>{note.start_date} {note.start_time}</span></p><p className="flex flex-col sm:flex-row sm:gap-2"><span className="text-gray-400 whitespace-nowrap">迄：</span><span className={completed ? 'text-gray-500' : 'text-gray-800'}>{note.end_date} {note.end_time}</span></p></div>
                          {/* [修改] 顯示填表人 + ID */}
-                         <p className="text-xs text-gray-400 mt-2 border-t pt-2 border-dashed border-gray-100">填表人：{note.sign_name || '-'}</p>
+                         <p className="text-xs text-gray-400 mt-2 border-t pt-2 border-dashed border-gray-100">填表人：{note.sign_name ? `${note.sign_name} (${note.id_2})` : '-'}</p>
                          {note.memo && <div className="bg-amber-50 p-2 rounded text-xs text-gray-600 mt-2"><span className="font-bold text-amber-700">想說的話：</span>{note.memo}</div>}
                       </div>
                       <p className="text-xs text-right text-gray-300 mt-3">登記於：{new Date(note.created_at).toLocaleDateString()}</p>
@@ -695,6 +713,7 @@ export default function RegistrationApp() {
                  <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden overflow-x-auto">
                    <table className="min-w-full divide-y divide-gray-200">
                      <thead className="bg-gray-50">
+                       {/* [修改] 欄位名稱調整 */}
                        <tr><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">狀態</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">大隊/小隊</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">精舍</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">姓名</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">法名</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">發心起日時</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">發心迄日時</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">填表人</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">備註</th></tr>
                      </thead>
                      <tbody className="bg-white divide-y divide-gray-200">
@@ -709,7 +728,7 @@ export default function RegistrationApp() {
                            <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{note.start_date} {note.start_time}</td>
                            <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{note.end_date} {note.end_time}</td>
                            {/* [修改] 填表人欄位：顯示 姓名 + (ID) */}
-                           <td className="px-4 py-4 whitespace-nowrap text-sm text-blue-600 font-medium">{note.sign_name || '-'}</td>
+                           <td className="px-4 py-4 whitespace-nowrap text-sm text-blue-600 font-medium">{note.sign_name ? `${note.sign_name}` : '-'}</td>
                            <td className="px-4 py-4 text-sm text-gray-500 max-w-xs truncate">{note.memo || '-'}</td>
                          </tr>
                        ))}
