@@ -10,12 +10,11 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 //
 // 1. 確保終端機已執行安裝: npm install @supabase/supabase-js
 // 2. [解除註解] 下方的「正式連線區塊 (A)」
-// 3. [刪除] 下方的「模擬連線區塊 (B)」的內容 (但請保留最上方的變數宣告)
+// 3. [刪除或註解] 下方的「模擬連線區塊 (B)」
 // ==========================================
 
-// --- 全域變數宣告 (請保留此處，避免刪除區塊後報錯) ---
 let mockUser: any = null;
-let mockDb: any = undefined; 
+let mockDb: any = undefined;
 
 // --- [A. 正式連線區塊] (請在 VS Code 中解除這裡的註解) ---
 /*
@@ -50,33 +49,28 @@ export default function RegistrationApp() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // 預設登入後進入公告欄
   const [activeTab, setActiveTab] = useState<'form' | 'history' | 'admin_data' | 'admin_users' | 'bulletin'>('bulletin');
   const [filterMonth, setFilterMonth] = useState('');
 
-  // 公告欄位
   const [bulletinText, setBulletinText] = useState('');
   const [bulletinImage, setBulletinImage] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // 修改密碼相關 State
   const [showPwdModal, setShowPwdModal] = useState(false);
   const [newPassword, setNewPassword] = useState('');
   const [pwdTargetUser, setPwdTargetUser] = useState<any>(null);
 
-  // 管理員新增使用者相關 State
   const [addUserName, setAddUserName] = useState('');
   const [addUserLast4, setAddUserLast4] = useState('');
   const [addUserPwd, setAddUserPwd] = useState('');
 
-  // 設定管理員帳號
   const ADMIN_ACCOUNT = 'admin'; 
 
   const [formData, setFormData] = useState({
     team_big: '觀音隊',
     team_small: '第1小隊',
     monastery: '',
-    real_name: '',
+    real_name: '', // 預設會帶入登入者，但可修改
     dharma_name: '',
     action_type: '新增',
     start_date: '',
@@ -148,7 +142,7 @@ export default function RegistrationApp() {
     }
     const headers = [
       "大隊", "小隊", "精舍", "姓名", "身分證後四碼", "法名", "動作", 
-      "開始日期", "開始時間", "結束日期", "結束時間", "需協助", "備註", "登記時間", "填表人(Sign Name)"
+      "開始日期", "開始時間", "結束日期", "結束時間", "需協助", "備註", "登記時間", "填表人"
     ];
     const csvRows = [
       headers.join(','),
@@ -167,7 +161,7 @@ export default function RegistrationApp() {
         note.need_help ? '是' : '否',
         `"${(note.memo || '').replace(/"/g, '""')}"`,
         new Date(note.created_at).toLocaleDateString(),
-        note.sign_name || '' // 匯出時也包含填表人
+        note.sign_name || '' 
       ].join(','))
     ];
     const csvString = csvRows.join('\n');
@@ -222,12 +216,10 @@ export default function RegistrationApp() {
 
   const handleDeleteBulletin = async (id: number) => {
     if (!confirm('確定要撤除此公告嗎？')) return;
-
     setLoading(true);
     const { error } = await supabase.from('bulletins').delete().eq('id', id);
-    if (error) {
-      alert('撤除失敗：' + error.message);
-    } else {
+    if (error) alert('撤除失敗：' + error.message);
+    else {
       alert('公告已撤除。');
       setBulletins(prev => prev.filter(b => b.id !== id));
       fetchBulletins(); 
@@ -236,11 +228,8 @@ export default function RegistrationApp() {
   };
 
   const handleChangePassword = async () => {
-    if (!newPassword || newPassword.length < 6) {
-      return alert('密碼長度需至少 6 碼');
-    }
+    if (!newPassword || newPassword.length < 6) return alert('密碼長度需至少 6 碼');
     setLoading(true);
-
     if (pwdTargetUser === 'SELF') {
       const { error } = await supabase.auth.updateUser({ password: newPassword });
       if (error) alert('修改失敗：' + error.message);
@@ -252,7 +241,6 @@ export default function RegistrationApp() {
           alert(`[模擬] 已強制修改使用者 ${pwdTargetUser.display_name} 的密碼為: ${newPassword}`);
       }
     }
-
     setLoading(false);
     setShowPwdModal(false);
     setNewPassword('');
@@ -261,15 +249,12 @@ export default function RegistrationApp() {
   const handleAdminAddUser = async () => {
     if(!addUserName || !addUserLast4 || !addUserPwd) return alert('請輸入完整資料');
     if(addUserLast4.length !== 4) return alert('ID 後四碼需為 4 碼');
-    
     setLoading(true);
     const uniqueId = addUserName + addUserLast4;
     const email = encodeName(uniqueId) + FAKE_DOMAIN;
-
     if (process.env.NEXT_PUBLIC_SUPABASE_URL) {
         alert('注意：正式環境下，此操作會導致您(管理員)被登出並登入新帳號。\n若要不登出建立帳號，需使用後端 API。');
     }
-
     const { error } = await supabase.auth.signUp({
         email,
         password: addUserPwd,
@@ -281,10 +266,8 @@ export default function RegistrationApp() {
             }
         }
     });
-
-    if (error) {
-        alert('新增失敗：' + error.message);
-    } else {
+    if (error) alert('新增失敗：' + error.message);
+    else {
         alert(`使用者 ${addUserName} 已建立！`);
         setAddUserName('');
         setAddUserLast4('');
@@ -297,7 +280,6 @@ export default function RegistrationApp() {
   const handleAdminDeleteUser = async (targetId: string) => {
     if (!confirm('確定要刪除此使用者嗎？此動作無法復原！')) return;
     setLoading(true);
-
     if (process.env.NEXT_PUBLIC_SUPABASE_URL) {
         alert('提示：由於 Supabase 安全限制，前端無法直接刪除使用者。\n請使用 Supabase Dashboard 進行操作。');
     } else {
@@ -312,11 +294,8 @@ export default function RegistrationApp() {
     setLoading(false);
   };
 
-  // 讀取所有使用者
   const fetchAllUsers = async () => {
-    if (mockDb && mockDb.users) {
-        setAllUsers([...mockDb.users]); 
-    }
+    if (mockDb.users) setAllUsers([...mockDb.users]); 
   };
 
   const fetchBulletins = async () => {
@@ -335,6 +314,7 @@ export default function RegistrationApp() {
       setUser(user);
       if (user) {
         const currentName = getDisplayNameOnly(user.email || '');
+        // 姓名欄位允許自由編輯，預設帶入登入者姓名
         setFormData(prev => ({ ...prev, real_name: currentName }));
         fetchNotes(user);
         fetchBulletins();
@@ -353,8 +333,11 @@ export default function RegistrationApp() {
       const { data, error } = await supabase
         .from('notes')
         .select('*')
+        // [修改] 排序改為：發心起日 ASC, 發心起時 ASC (由近到遠，递增)
         // @ts-ignore
-        .order('created_at', { ascending: false });
+        .order('start_date', { ascending: true })
+        // @ts-ignore
+        .order('start_time', { ascending: true });
       
       if (error) console.error('讀取失敗:', error);
       else if (data) setNotes(data);
@@ -384,13 +367,14 @@ export default function RegistrationApp() {
     if (formData.monastery.length > 2) return alert('精舍欄位限填2個字');
     if (formData.dharma_name && formData.dharma_name.length > 2) return alert('法名欄位限填2個字');
     
+    // 取得 ID 後四碼
     const currentId2 = getIdLast4FromEmail(user.email || '');
 
     const insertData = {
       ...formData,
       id_2: currentId2,
       user_id: user.id,
-      sign_name: getDisplayNameOnly(user.email || ''), // [新增] 將登入者姓名寫入 sign_name
+      sign_name: getDisplayNameOnly(user.email || ''), // 寫入登入者姓名
       content: `【${formData.action_type}】${formData.team_big}-${formData.team_small} ${formData.real_name}` 
     };
 
@@ -401,7 +385,7 @@ export default function RegistrationApp() {
         team_big: '觀音隊',
         team_small: '第1小隊',
         monastery: '',
-        real_name: getDisplayNameOnly(user.email || ''), // 重置回登入者姓名
+        real_name: getDisplayNameOnly(user.email || ''), // 重置時帶回登入者，但可再次修改
         dharma_name: '',
         action_type: '新增',
         start_date: '',
@@ -415,7 +399,7 @@ export default function RegistrationApp() {
       setActiveTab('history');
     } else {
       // @ts-ignore
-      alert('寫入失敗：' + error.message + '\n(若顯示 column "sign_name" does not exist，請執行 SQL 新增欄位)');
+      alert('寫入失敗：' + error.message);
     }
   };
 
@@ -434,21 +418,17 @@ export default function RegistrationApp() {
     if (!user) return;
     const AUTO_LOGOUT_TIME = 15 * 60 * 1000; 
     let timeoutId: NodeJS.Timeout;
-
     const performAutoLogout = () => {
       alert("您已閒置超過 15 分鐘，系統將自動登出以確保安全。");
       handleLogout();
     };
-
     const resetTimer = () => {
       clearTimeout(timeoutId);
       timeoutId = setTimeout(performAutoLogout, AUTO_LOGOUT_TIME);
     };
-
     const events = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart'];
     events.forEach(event => document.addEventListener(event, resetTimer));
     resetTimer();
-
     return () => {
       clearTimeout(timeoutId);
       events.forEach(event => document.removeEventListener(event, resetTimer));
@@ -458,7 +438,6 @@ export default function RegistrationApp() {
   const handleSignUp = async () => {
     if (!username || !idLast4 || !password) return alert("請輸入完整資料");
     if (idLast4.length !== 4) return alert("身分證後四碼必須為 4 位數字");
-
     setLoading(true);
     const uniqueId = username + idLast4;
     const email = encodeName(uniqueId) + FAKE_DOMAIN; 
@@ -466,13 +445,7 @@ export default function RegistrationApp() {
     const { error } = await supabase.auth.signUp({ 
       email, 
       password,
-      options: {
-        data: {
-          display_name: username,
-          full_name: username,
-          id_last4: idLast4
-        }
-      }
+      options: { data: { display_name: username, full_name: username, id_last4: idLast4 } }
     });
     
     if (error) alert('註冊失敗：' + error.message);
@@ -483,10 +456,7 @@ export default function RegistrationApp() {
       setFormData(prev => ({ ...prev, real_name: username }));
       fetchNotes(user);
       fetchBulletins();
-      // 管理員檢查
-      if (username.toLowerCase() === ADMIN_ACCOUNT) {
-          fetchAllUsers();
-      }
+      if (username.toLowerCase() === ADMIN_ACCOUNT) fetchAllUsers();
       await recordLogin(uniqueId, '註冊');
     }
     setLoading(false);
@@ -506,10 +476,7 @@ export default function RegistrationApp() {
       setFormData(prev => ({ ...prev, real_name: username }));
       fetchNotes(data.user);
       fetchBulletins();
-      // 管理員檢查
-      if (username.toLowerCase() === ADMIN_ACCOUNT) {
-          fetchAllUsers();
-      }
+      if (username.toLowerCase() === ADMIN_ACCOUNT) fetchAllUsers();
       await recordLogin(uniqueId, '登入');
     }
     setLoading(false);
@@ -574,26 +541,8 @@ export default function RegistrationApp() {
             <button onClick={() => setActiveTab('history')} className={`flex-1 py-3 px-2 whitespace-nowrap rounded-md font-bold transition-all ${activeTab === 'history' ? 'bg-white text-amber-800 shadow-sm' : 'text-amber-600 hover:bg-amber-200/50'}`}>📋 我的紀錄</button>
             {isAdmin && (
               <>
-                <button 
-                  onClick={() => setActiveTab('admin_data')} 
-                  className={`flex-1 py-3 px-2 whitespace-nowrap rounded-md font-bold transition-all ${
-                    activeTab === 'admin_data' 
-                      ? 'bg-red-50 text-red-800 shadow-sm border border-red-200' 
-                      : 'text-red-600 hover:bg-red-50/50'
-                  }`}
-                >
-                  📊 全部報名資料
-                </button>
-                <button 
-                  onClick={() => setActiveTab('admin_users')} 
-                  className={`flex-1 py-3 px-2 whitespace-nowrap rounded-md font-bold transition-all ${
-                    activeTab === 'admin_users' 
-                      ? 'bg-blue-50 text-blue-800 shadow-sm border border-blue-200' 
-                      : 'text-blue-600 hover:bg-blue-50/50'
-                  }`}
-                >
-                  👥 使用者
-                </button>
+                <button onClick={() => setActiveTab('admin_data')} className={`flex-1 py-3 px-2 whitespace-nowrap rounded-md font-bold transition-all ${activeTab === 'admin_data' ? 'bg-red-50 text-red-800 shadow-sm border border-red-200' : 'text-red-600 hover:bg-red-50/50'}`}>📊 全部報名資料</button>
+                <button onClick={() => setActiveTab('admin_users')} className={`flex-1 py-3 px-2 whitespace-nowrap rounded-md font-bold transition-all ${activeTab === 'admin_users' ? 'bg-blue-50 text-blue-800 shadow-sm border border-blue-200' : 'text-blue-600 hover:bg-blue-50/50'}`}>👥 使用者</button>
               </>
             )}
           </div>
@@ -633,7 +582,7 @@ export default function RegistrationApp() {
                  <div><label className="block text-sm font-medium text-gray-700 mb-1">1. 大隊</label><select className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900" value={formData.team_big} onChange={(e) => setFormData({...formData, team_big: e.target.value})}><option value="觀音隊">觀音隊</option><option value="文殊隊">文殊隊</option><option value="普賢隊">普賢隊</option><option value="地藏隊">地藏隊</option><option value="彌勒隊">彌勒隊</option></select></div>
                  <div><label className="block text-sm font-medium text-gray-700 mb-1">2. 小隊</label><select className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900" value={formData.team_small} onChange={(e) => setFormData({...formData, team_small: e.target.value})}><option value="第1小隊">第1小隊</option><option value="第2小隊">第2小隊</option><option value="第3小隊">第3小隊</option><option value="第4小隊">第4小隊</option><option value="第5小隊">第5小隊</option></select></div>
                  <div><label className="block text-sm font-medium text-gray-700 mb-1">3. 精舍</label><input type="text" maxLength={2} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900" value={formData.monastery} onChange={(e) => setFormData({...formData, monastery: e.target.value})} /></div>
-                 <div><label className="block text-sm font-medium text-gray-700 mb-1">4. 姓名</label><input type="text" className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900 focus:ring-2 focus:ring-amber-500" value={formData.real_name} onChange={(e) => setFormData({...formData, real_name: e.target.value})} /></div>
+                 <div><label className="block text-sm font-medium text-gray-700 mb-1">4. 姓名</label><input type="text" className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900" value={formData.real_name} onChange={(e) => setFormData({...formData, real_name: e.target.value})} /></div>
                  <div><label className="block text-sm font-medium text-gray-700 mb-1">5. 法名</label><input type="text" maxLength={2} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900" value={formData.dharma_name} onChange={(e) => setFormData({...formData, dharma_name: e.target.value})} /></div>
                  <div><label className="block text-sm font-medium text-gray-700 mb-1">6. 新增異動</label><select className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900" value={formData.action_type} onChange={(e) => setFormData({...formData, action_type: e.target.value})}><option value="新增">新增</option><option value="異動">異動</option></select></div>
                  <div className="lg:col-span-2"><label className="block text-sm font-medium text-gray-700 mb-1">7, 8. 發心起</label><div className="flex gap-2"><input type="date" className="flex-1 p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900" value={formData.start_date} onChange={(e) => setFormData({...formData, start_date: e.target.value})} /><input type="time" className="w-32 p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900" value={formData.start_time} onChange={(e) => setFormData({...formData, start_time: e.target.value})} /></div></div>
@@ -648,7 +597,13 @@ export default function RegistrationApp() {
           {activeTab === 'history' && (
             <div className="space-y-4 animate-fade-in">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {notes.filter(n => isAdmin || n.real_name === getDisplayNameOnly(user.email || '')).map((note) => {
+                {/* [修正] 歷史紀錄過濾：登入者只能看到自己的，管理員可以看到所有人的 (但前端這裡還是過濾一下顯示比較好，或者您希望管理員在歷史紀錄也看到所有人?)
+                    通常 "我的紀錄" 應該只顯示自己的。 "全部報名資料" 才是顯示所有人的。
+                    因此這裡邏輯改為：只顯示 `user_id` 相符的，或者 `sign_name` (填表人) 相符的。
+                    注意：如果是 Admin，他也可能有自己的報名紀錄。
+                    這裡暫時維持：Admin 看到全部 (方便測試)，User 只看到自己的。
+                */}
+                {notes.filter(n => isAdmin || n.user_id === user?.id || n.sign_name === getDisplayNameOnly(user?.email || '')).map((note) => {
                   const completed = isExpired(note.end_date, note.end_time);
                   return (
                     <div key={note.id} className={`bg-white p-5 rounded-xl shadow-sm border transition relative overflow-hidden ${completed ? 'border-gray-200 bg-gray-50/50' : 'border-amber-100 hover:border-amber-300'}`}>
@@ -681,7 +636,7 @@ export default function RegistrationApp() {
                  <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden overflow-x-auto">
                    <table className="min-w-full divide-y divide-gray-200">
                      <thead className="bg-gray-50">
-                       <tr><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">狀態</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">姓名 (ID)</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">法名</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">發心起日時</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">發心迄日時</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">備註</th></tr>
+                       <tr><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">狀態</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">姓名 (ID)</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">法名</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">發心起日時</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">發心迄日時</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">填表人(帳號)</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">備註</th></tr>
                      </thead>
                      <tbody className="bg-white divide-y divide-gray-200">
                        {getFilteredNotes().map((note) => (
@@ -691,6 +646,7 @@ export default function RegistrationApp() {
                            <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{note.dharma_name || '-'}</td>
                            <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{note.start_date} {note.start_time}</td>
                            <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{note.end_date} {note.end_time}</td>
+                           <td className="px-4 py-4 text-sm text-gray-500">{note.sign_name || '-'}</td>
                            <td className="px-4 py-4 text-sm text-gray-500 max-w-xs truncate">{note.memo || '-'}</td>
                          </tr>
                        ))}
