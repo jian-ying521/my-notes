@@ -10,10 +10,10 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 //
 // 1. 確保終端機已執行安裝: npm install @supabase/supabase-js
 // 2. [解除註解] 下方的「正式連線區塊 (A)」
-// 3. [刪除或註解] 下方的「模擬連線區塊 (B)」
+// 3. [刪除] 下方的「模擬連線區塊 (B)」的內容 (但請保留最上方的變數宣告)
 // ==========================================
 
-// --- 全域變數宣告 ---
+// --- 全域變數宣告 (請保留此處，避免刪除區塊後報錯) ---
 let mockUser: any = null;
 let mockDb: any = undefined; 
 
@@ -38,6 +38,7 @@ const createClient = () => {
 
 
 
+
 export default function RegistrationApp() {
   const [notes, setNotes] = useState<any[]>([]);
   const [bulletins, setBulletins] = useState<any[]>([]);
@@ -49,7 +50,6 @@ export default function RegistrationApp() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // 預設登入後進入公告欄
   const [activeTab, setActiveTab] = useState<'form' | 'history' | 'admin_data' | 'admin_users' | 'bulletin'>('bulletin');
   const [filterMonth, setFilterMonth] = useState('');
 
@@ -385,12 +385,16 @@ export default function RegistrationApp() {
     if (formData.dharma_name && formData.dharma_name.length > 2) return alert('法名欄位限填2個字');
     
     const currentId2 = getIdLast4FromEmail(user.email || '');
+    const currentName = getDisplayNameOnly(user.email || '');
+
+    // [修改] 組合 sign_name (填表人) = 姓名 + (ID後四碼)
+    const signNameCombined = `${currentName} (${currentId2})`;
 
     const insertData = {
       ...formData,
       id_2: currentId2,
       user_id: user.id,
-      sign_name: getDisplayNameOnly(user.email || ''), // 寫入登入者姓名作為填表人
+      sign_name: signNameCombined, // 寫入組合好的填表人資訊
       content: `【${formData.action_type}】${formData.team_big}-${formData.team_small} ${formData.real_name}` 
     };
 
@@ -633,7 +637,7 @@ export default function RegistrationApp() {
                  <div><label className="block text-sm font-medium text-gray-700 mb-1">1. 大隊</label><select className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900" value={formData.team_big} onChange={(e) => setFormData({...formData, team_big: e.target.value})}><option value="觀音隊">觀音隊</option><option value="文殊隊">文殊隊</option><option value="普賢隊">普賢隊</option><option value="地藏隊">地藏隊</option><option value="彌勒隊">彌勒隊</option></select></div>
                  <div><label className="block text-sm font-medium text-gray-700 mb-1">2. 小隊</label><select className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900" value={formData.team_small} onChange={(e) => setFormData({...formData, team_small: e.target.value})}><option value="第1小隊">第1小隊</option><option value="第2小隊">第2小隊</option><option value="第3小隊">第3小隊</option><option value="第4小隊">第4小隊</option><option value="第5小隊">第5小隊</option></select></div>
                  <div><label className="block text-sm font-medium text-gray-700 mb-1">3. 精舍</label><input type="text" maxLength={2} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900" value={formData.monastery} onChange={(e) => setFormData({...formData, monastery: e.target.value})} /></div>
-                 <div><label className="block text-sm font-medium text-gray-700 mb-1">4. 姓名</label><input type="text" className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900 focus:ring-2 focus:ring-amber-500" value={formData.real_name} onChange={(e) => setFormData({...formData, real_name: e.target.value})} /></div>
+                 <div><label className="block text-sm font-medium text-gray-700 mb-1">4. 姓名</label><input type="text" className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900" value={formData.real_name} onChange={(e) => setFormData({...formData, real_name: e.target.value})} /></div>
                  <div><label className="block text-sm font-medium text-gray-700 mb-1">5. 法名</label><input type="text" maxLength={2} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900" value={formData.dharma_name} onChange={(e) => setFormData({...formData, dharma_name: e.target.value})} /></div>
                  <div><label className="block text-sm font-medium text-gray-700 mb-1">6. 新增異動</label><select className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900" value={formData.action_type} onChange={(e) => setFormData({...formData, action_type: e.target.value})}><option value="新增">新增</option><option value="異動">異動</option></select></div>
                  <div className="lg:col-span-2"><label className="block text-sm font-medium text-gray-700 mb-1">7, 8. 發心起</label><div className="flex gap-2"><input type="date" className="flex-1 p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900" value={formData.start_date} onChange={(e) => setFormData({...formData, start_date: e.target.value})} /><input type="time" className="w-32 p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900" value={formData.start_time} onChange={(e) => setFormData({...formData, start_time: e.target.value})} /></div></div>
@@ -648,7 +652,8 @@ export default function RegistrationApp() {
           {activeTab === 'history' && (
             <div className="space-y-4 animate-fade-in">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {notes.filter(n => isAdmin || n.user_id === user?.id || n.sign_name === getDisplayNameOnly(user?.email || '')).map((note) => {
+                {/* [修改] 歷史紀錄顯示邏輯：只顯示自己的資料 (filter by user_id) */}
+                {notes.filter(n => n.user_id === user?.id).map((note) => {
                   const completed = isExpired(note.end_date, note.end_time);
                   return (
                     <div key={note.id} className={`bg-white p-5 rounded-xl shadow-sm border transition relative overflow-hidden ${completed ? 'border-gray-200 bg-gray-50/50' : 'border-amber-100 hover:border-amber-300'}`}>
@@ -659,6 +664,8 @@ export default function RegistrationApp() {
                       <div className="text-sm text-gray-700 space-y-2">
                          <div className="grid grid-cols-2 gap-2"><p><span className="text-gray-400">精舍：</span>{note.monastery}</p><p><span className="text-gray-400">姓名：</span>{note.real_name}</p><p><span className="text-gray-400">法名：</span>{note.dharma_name || '-'}</p><p><span className="text-gray-400">協助：</span>{note.need_help ? '是' : '否'}</p></div>
                          <div className="border-t border-dashed border-gray-200 pt-2 mt-2"><p className="flex flex-col sm:flex-row sm:gap-2"><span className="text-gray-400 whitespace-nowrap">起：</span><span className={completed ? 'text-gray-500' : 'text-gray-800'}>{note.start_date} {note.start_time}</span></p><p className="flex flex-col sm:flex-row sm:gap-2"><span className="text-gray-400 whitespace-nowrap">迄：</span><span className={completed ? 'text-gray-500' : 'text-gray-800'}>{note.end_date} {note.end_time}</span></p></div>
+                         {/* [新增] 在卡片中顯示填表人 */}
+                         <p className="text-xs text-gray-400 mt-2 border-t pt-2 border-dashed border-gray-100">填表人：{note.sign_name || '-'}</p>
                          {note.memo && <div className="bg-amber-50 p-2 rounded text-xs text-gray-600 mt-2"><span className="font-bold text-amber-700">想說的話：</span>{note.memo}</div>}
                       </div>
                       <p className="text-xs text-right text-gray-300 mt-3">登記於：{new Date(note.created_at).toLocaleDateString()}</p>
@@ -666,7 +673,7 @@ export default function RegistrationApp() {
                   );
                 })}
               </div>
-              {notes.length === 0 && <div className="text-center py-12 bg-white/50 rounded-xl border border-dashed border-gray-300"><p className="text-gray-500">尚無登記紀錄</p></div>}
+              {notes.filter(n => n.user_id === user?.id).length === 0 && <div className="text-center py-12 bg-white/50 rounded-xl border border-dashed border-gray-300"><p className="text-gray-500">尚無登記紀錄</p></div>}
             </div>
           )}
 
@@ -681,17 +688,8 @@ export default function RegistrationApp() {
                  <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden overflow-x-auto">
                    <table className="min-w-full divide-y divide-gray-200">
                      <thead className="bg-gray-50">
-                       <tr>
-                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">狀態</th>
-                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">大隊/小隊</th>
-                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">精舍</th>
-                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">姓名 (ID)</th>
-                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">法名</th>
-                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">發心起日時</th>
-                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">發心迄日時</th>
-                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">填表人 (報名者)</th>
-                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">備註</th>
-                       </tr>
+                       {/* [修改] 欄位名稱調整 */}
+                       <tr><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">狀態</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">大隊/小隊</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">精舍</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">姓名</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">法名</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">發心起日時</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">發心迄日時</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">填表人</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">備註</th></tr>
                      </thead>
                      <tbody className="bg-white divide-y divide-gray-200">
                        {getFilteredNotes().map((note) => (
@@ -699,7 +697,7 @@ export default function RegistrationApp() {
                            <td className="px-4 py-4 whitespace-nowrap"><span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${note.action_type === '新增' ? 'bg-blue-100 text-blue-800' : 'bg-orange-100 text-orange-800'}`}>{note.action_type}</span></td>
                            <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">{note.team_big} <span className="text-gray-400">|</span> {note.team_small}</td>
                            <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">{note.monastery}</td>
-                           <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{note.real_name} <span className="text-xs text-gray-400">({note.id_2})</span></td>
+                           <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{note.real_name}</td>
                            <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{note.dharma_name || '-'}</td>
                            <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{note.start_date} {note.start_time}</td>
                            <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{note.end_date} {note.end_time}</td>
