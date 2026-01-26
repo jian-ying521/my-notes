@@ -38,7 +38,6 @@ const createClient = () => {
 
 
 
-
 export default function RegistrationApp() {
   const [notes, setNotes] = useState<any[]>([]);
   const [bulletins, setBulletins] = useState<any[]>([]);
@@ -157,7 +156,6 @@ export default function RegistrationApp() {
         .order('created_at', { ascending: true }); 
       
       setTeamBigOptions(bigData || []);
-      // 若有資料，設定預設值
       if (bigData && bigData.length > 0) {
           setFormData(prev => ({...prev, team_big: prev.team_big || bigData[0].value}));
       } else {
@@ -180,7 +178,6 @@ export default function RegistrationApp() {
     } catch (e) { console.error(e); }
   }, [supabase]);
 
-  // 新增選項
   const handleAddOption = async (category: 'team_big' | 'team_small') => {
       if (!newOptionValue.trim()) return alert('請輸入選項名稱');
       setLoading(true);
@@ -195,7 +192,6 @@ export default function RegistrationApp() {
       setLoading(false);
   };
 
-  // 刪除選項
   const handleDeleteOption = async (id: number) => {
       if (!confirm('確定刪除此選項？')) return;
       setLoading(true);
@@ -205,28 +201,7 @@ export default function RegistrationApp() {
       setLoading(false);
   };
 
-  // [新增] 匯入預設選項
-  const handleInitializeDefaults = async () => {
-      if (!confirm('確定要匯入預設選項嗎？\n(若資料庫已有資料，建議不要重複執行)')) return;
-      
-      setLoading(true);
-      const defaultBig = ['觀音隊', '文殊隊', '普賢隊', '地藏隊', '彌勒隊'];
-      const defaultSmall = ['第1小隊', '第2小隊', '第3小隊', '第4小隊', '第5小隊'];
-
-      const insertPayload = [
-          ...defaultBig.map(v => ({ category: 'team_big', value: v })),
-          ...defaultSmall.map(v => ({ category: 'team_small', value: v }))
-      ];
-
-      const { error } = await supabase.from('system_options').insert(insertPayload);
-      
-      if (error) alert('匯入失敗：' + error.message);
-      else {
-          alert('預設選項匯入成功！');
-          fetchOptions();
-      }
-      setLoading(false);
-  };
+  // [移除] handleInitializeDefaults 功能
 
   const exportToExcel = () => {
     const dataToExport = getFilteredNotes();
@@ -236,7 +211,7 @@ export default function RegistrationApp() {
     }
     const headers = [
       "大隊", "小隊", "精舍", "姓名", "身分證後四碼", "法名", "動作", 
-      "開始日期", "開始時間", "結束日期", "結束時間", "需協助", "備註", "登記時間", "填表人", "是否刪除"
+      "開始日期", "開始時間", "結束日期", "結束時間", "需協助", "備註", "登記時間", "填表人"
     ];
     const csvRows = [
       headers.join(','),
@@ -255,8 +230,7 @@ export default function RegistrationApp() {
         note.need_help ? '是' : '否',
         `"${(note.memo || '').replace(/"/g, '""')}"`,
         new Date(note.created_at).toLocaleDateString(),
-        note.sign_name || '',
-        note.is_deleted ? '已刪除' : ''
+        note.sign_name || '' 
       ].join(','))
     ];
     const csvString = csvRows.join('\n');
@@ -324,7 +298,6 @@ export default function RegistrationApp() {
     setLoading(false);
   };
 
-  // [修改] 報名資料軟刪除 (更新版：加入回傳檢查)
   const handleToggleDeleteNote = async (id: number, currentStatus: boolean) => {
     if (!currentStatus && !confirm('確定要標記「刪除」此報名資料嗎？\n(資料仍會保留在列表中，但會顯示為刪除)')) return;
 
@@ -350,10 +323,8 @@ export default function RegistrationApp() {
     if (error) {
       alert('更新失敗：' + error.message);
     } else if (data && data.length === 0) {
-      // 這裡如果回傳空陣列，代表 RLS 擋下了 update 操作
-      alert('權限錯誤：無法修改資料。\n請確認 Supabase 已建立 UPDATE 的 RLS 政策。\n(請參考檔案最上方的 SQL 指令)');
+      alert('權限錯誤：無法修改資料。請檢查 RLS。');
     } else {
-      // 成功
       setNotes(prev => prev.map(n => n.id === id ? { ...n, is_deleted: newStatus } : n));
       if (isAdmin) fetchAllUsers();
     }
@@ -419,58 +390,76 @@ export default function RegistrationApp() {
     setLoading(false);
   };
 
-  // [修改] 統計報名者與筆數
-  // 關鍵修正：將 Group By 邏輯改為 ID + Name，避免同名不同 ID 混淆
+  const handleAdminDeleteUser = async (targetId: string) => {
+    if (!confirm('確定要刪除此使用者嗎？此動作無法復原！')) return;
+    setLoading(true);
+
+    if (process.env.NEXT_PUBLIC_SUPABASE_URL) {
+        alert('提示：由於 Supabase 安全限制，前端無法直接刪除使用者。\n請使用 Supabase Dashboard 進行操作。');
+    } else {
+        // @ts-ignore
+        if (supabase.auth.admin && supabase.auth.admin.deleteUser) {
+             // @ts-ignore
+             await supabase.auth.admin.deleteUser(targetId);
+             alert('[模擬] 使用者已刪除');
+             fetchAllUsers(); 
+        }
+    }
+    setLoading(false);
+  };
+
+  // [修改] 讀取所有使用者 (統計報名筆數)
   const fetchAllUsers = useCallback(async () => {
     let allNotes = [];
-    
     try {
         if (mockDb && mockDb.notes) {
             allNotes = [...mockDb.notes];
         } else {
             const { data } = await supabase
                 .from('notes')
-                .select('sign_name, id_2')
+                .select('sign_name, id_2, real_name, dharma_name')
                 .order('created_at', { ascending: false });
             allNotes = data || [];
         }
 
         const userMap = new Map();
         allNotes.forEach((note: any) => {
-            let displayName = note.sign_name;
-            let idPart = note.id_2 || '';
+            // [關鍵修改] 這裡的邏輯：
+            // 我們要找的是「填表人」的資料。
+            // 由於系統沒有獨立的使用者設定檔，我們嘗試從報名表中，找出該填表人「自己幫自己報名」的那一筆資料，來取得他的法名。
+            
+            // 1. 解析填表人姓名 (格式: 姓名 (ID))
+            let signerNameRaw = note.sign_name || '未知使用者';
+            let pureSignerName = signerNameRaw;
+            let idPart = note.id_2 || ''; // 預設使用該筆資料的 ID
 
-            if (!displayName) {
-                displayName = '未知使用者';
-            } else if (displayName.includes('(')) {
-                // 如果 sign_name 已經包含 ID (舊資料格式 "Name (ID)")，嘗試解析出 ID
-                // 但為了分開計算，我們還是以 id_2 欄位為最準確的依據
-                const parts = displayName.split('(');
-                if (parts.length > 1) {
-                    // 如果 id_2 是空的，試著從 sign_name 補回來
-                    if (!idPart) idPart = parts[1].replace(')', '').trim();
-                }
+            if (signerNameRaw.includes('(')) {
+                const parts = signerNameRaw.split('(');
+                pureSignerName = parts[0].trim();
+                idPart = parts[1].replace(')', '').trim();
             }
 
-            // 核心修正：使用 ID 作為 Map 的 Key，確保不同 ID 的人分開
-            // 如果 id_2 為空，則退而求其次用 displayName
-            const uniqueKey = idPart ? `${displayName}-${idPart}` : displayName;
+            // 2. 建立 Key
+            const uniqueKey = `${pureSignerName}-${idPart}`;
 
             if (!userMap.has(uniqueKey)) {
-                // 顯示名稱處理：如果 displayName 已經包含 ID，就直接顯示
-                // 如果不包含，我們手動組合 "Name (ID)" 以便在列表中清楚區分
-                let finalDisplayName = displayName;
-                if (idPart && !displayName.includes(idPart)) {
-                    finalDisplayName = `${displayName} (${idPart})`;
-                }
-
                 userMap.set(uniqueKey, {
-                    display_name: finalDisplayName, // 列表顯示用
+                    display_name: pureSignerName,
                     id_last4: idPart,
+                    dharma: '', // 預設法名為空
                     count: 0
                 });
             }
-            userMap.get(uniqueKey).count += 1;
+
+            const currentUser = userMap.get(uniqueKey);
+            currentUser.count += 1;
+
+            // 3. 嘗試抓取法名：
+            // 如果這筆資料的「報名者姓名 (real_name)」等於「填表人姓名 (pureSignerName)」，
+            // 那我們就假設這筆資料的法名，就是填表人的法名。
+            if (note.real_name === pureSignerName && note.dharma_name) {
+                currentUser.dharma = note.dharma_name;
+            }
         });
 
         setAllUsers(Array.from(userMap.values()));
@@ -535,7 +524,9 @@ export default function RegistrationApp() {
       await supabase.from('login_history').insert([
         { real_name: name, action: action }
       ]);
-    } catch (e) { console.error('紀錄登入失敗', e); }
+    } catch (e) {
+      console.error('紀錄登入失敗', e);
+    }
   };
 
   const handleSubmit = async () => {
@@ -603,17 +594,21 @@ export default function RegistrationApp() {
     if (!user) return;
     const AUTO_LOGOUT_TIME = 15 * 60 * 1000; 
     let timeoutId: NodeJS.Timeout;
+
     const performAutoLogout = () => {
       alert("您已閒置超過 15 分鐘，系統將自動登出以確保安全。");
       handleLogout();
     };
+
     const resetTimer = () => {
       clearTimeout(timeoutId);
       timeoutId = setTimeout(performAutoLogout, AUTO_LOGOUT_TIME);
     };
+
     const events = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart'];
     events.forEach(event => document.addEventListener(event, resetTimer));
     resetTimer();
+
     return () => {
       clearTimeout(timeoutId);
       events.forEach(event => document.removeEventListener(event, resetTimer));
@@ -623,14 +618,23 @@ export default function RegistrationApp() {
   const handleSignUp = async () => {
     if (!username || !idLast4 || !password) return alert("請輸入完整資料");
     if (idLast4.length !== 4) return alert("身分證後四碼必須為 4 位數字");
+
     setLoading(true);
     const uniqueId = username + idLast4;
     const email = encodeName(uniqueId) + FAKE_DOMAIN; 
+    
     const { error } = await supabase.auth.signUp({ 
       email, 
       password,
-      options: { data: { display_name: username, full_name: username, id_last4: idLast4 } }
+      options: {
+        data: {
+          display_name: username,
+          full_name: username,
+          id_last4: idLast4
+        }
+      }
     });
+    
     if (error) alert('註冊失敗：' + error.message);
     else {
       alert('註冊成功！系統已為您登入。');
@@ -652,6 +656,7 @@ export default function RegistrationApp() {
     setLoading(true);
     const uniqueId = username + idLast4;
     const email = encodeName(uniqueId) + FAKE_DOMAIN;
+
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) {
       alert('登入失敗：' + error.message);
@@ -945,7 +950,7 @@ export default function RegistrationApp() {
                             {allUsers.length > 0 ? allUsers.map(u => (
                                 <tr key={u.id} className="hover:bg-gray-50">
                                     {/* [修改] 顯示欄位：姓名、ID、筆數 */}
-                                    <td className="px-4 py-3 text-sm font-medium text-gray-900">{u.display_name}</td>
+                                    <td className="px-4 py-3 text-sm font-medium text-gray-900">{u.display_name} {u.dharma ? `(${u.dharma})` : ''}</td>
                                     <td className="px-4 py-3 text-sm text-gray-500">{u.id_last4}</td>
                                     <td className="px-4 py-3 text-right text-sm font-medium text-blue-600">{u.count} 筆</td>
                                 </tr>
