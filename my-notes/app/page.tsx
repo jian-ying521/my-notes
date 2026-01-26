@@ -13,14 +13,30 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 // [步驟 1] 部署到 Vercel 時，請解除下方這一行的註解
 // import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
-
 // --- [預覽用替代定義 - 開始] (部署時請刪除此區塊) ---
 
 // --- [預覽用替代定義 - 結束] ------------------------
 
 // --- 全域變數宣告 ---
 let mockUser: any = null;
-let mockDb: any = undefined;
+let mockDb: any = {
+  notes: [
+      { id: 1, team_big: '觀音隊', team_small: '第1小隊', monastery: '台北', real_name: '王小明', dharma_name: '寬明', action_type: '新增', start_date: '2023-10-01', start_time: '08:00', end_date: '2023-10-01', end_time: '12:00', need_help: true, memo: '模擬資料', id_2: '1234', sign_name: '王小明 (1234)', is_deleted: false, created_at: new Date('2023-10-01T08:00:00').toISOString(), user_id: 'user-1' }
+  ],
+  bulletins: [{ id: 1, content: '🎉 歡迎使用一一報名系統！', image_url: '', created_at: new Date().toISOString() }],
+  user_permissions: [
+      { id: 1, email: 'admin@example.com', uid: 'user-1', is_admin: true, is_disabled: false, user_name: 'admin', id_last4: '1234', created_at: new Date().toISOString() },
+      { id: 2, email: 'user@example.com', uid: 'user-2', is_admin: false, is_disabled: false, user_name: '王小明', id_last4: '5566', created_at: new Date().toISOString() }
+  ],
+  users: [],
+  login_history: [],
+  system_options: [
+    { id: 1, category: 'team_big', value: '觀音隊' }, { id: 2, category: 'team_big', value: '文殊隊' },
+    { id: 3, category: 'team_big', value: '普賢隊' }, { id: 4, category: 'team_big', value: '地藏隊' }, { id: 5, category: 'team_big', value: '彌勒隊' },
+    { id: 6, category: 'team_small', value: '第1小隊' }, { id: 7, category: 'team_small', value: '第2小隊' },
+    { id: 8, category: 'team_small', value: '第3小隊' }, { id: 9, category: 'team_small', value: '第4小隊' }, { id: 10, category: 'team_small', value: '第5小隊' }
+  ]
+};
 
 // --- [正式連線函式] (部署時請解除註解) ---
 /*
@@ -31,6 +47,7 @@ const createClient = (url: string, key: string, options?: any) => {
 const createClient = (url: string, key: string, options?: any) => {
   return createSupabaseClient(url, key, options);
 };
+
 
 // --- Helper Functions ---
 const getSupabase = () => {
@@ -62,7 +79,6 @@ export default function RegistrationApp() {
 
   const FAKE_DOMAIN = "@my-notes.com";
 
-  // 為了避免 mockDb 為 undefined 時報錯，這裡給予空陣列初始值，稍後由 fetchOptions 填充
   const [teamBigOptions, setTeamBigOptions] = useState<any[]>([]);
   const [teamSmallOptions, setTeamSmallOptions] = useState<any[]>([]);
   
@@ -151,28 +167,21 @@ export default function RegistrationApp() {
     try {
       const { data: bigDataRaw } = await client.from('system_options').select('*').eq('category', 'team_big').order('created_at', { ascending: true });
       const bigData = bigDataRaw || [];
-      // 若是 mockDb 未定義 (第一次進入預覽)，給予空陣列
-      const fallbackBig = (!supabase && mockDb?.system_options) ? mockDb.system_options.filter((o:any)=>o.category==='team_big') : [];
+      setTeamBigOptions(bigData);
       
-      const finalBig = bigData.length > 0 ? bigData : fallbackBig;
-      setTeamBigOptions(finalBig);
-      
-      if (finalBig.length > 0) {
-        setFormData(p => ({...p, team_big: p.team_big || finalBig[0].value}));
+      if (bigData.length > 0) {
+        setFormData(p => ({...p, team_big: p.team_big || bigData[0].value}));
       }
 
       const { data: smallDataRaw } = await client.from('system_options').select('*').eq('category', 'team_small').order('created_at', { ascending: true });
       const smallData = smallDataRaw || [];
-      const fallbackSmall = (!supabase && mockDb?.system_options) ? mockDb.system_options.filter((o:any)=>o.category==='team_small') : [];
+      setTeamSmallOptions(smallData);
 
-      const finalSmall = smallData.length > 0 ? smallData : fallbackSmall;
-      setTeamSmallOptions(finalSmall);
-
-      if (finalSmall.length > 0) {
-        setFormData(p => ({...p, team_small: p.team_small || finalSmall[0].value}));
+      if (smallData.length > 0) {
+        setFormData(p => ({...p, team_small: p.team_small || smallData[0].value}));
       }
     } catch (e) { console.error(e); }
-  }, [client, supabase]);
+  }, [client]);
 
   const fetchBulletins = async () => {
     if (!client) return;
@@ -186,8 +195,8 @@ export default function RegistrationApp() {
     let nData: any[] = [];
 
     if (!supabase) {
-        pData = mockDb?.user_permissions || [];
-        nData = mockDb?.notes || [];
+        pData = mockDb.user_permissions || [];
+        nData = mockDb.notes || [];
     } else {
         const { data: p } = await supabase.from('user_permissions').select('*').order('created_at', { ascending: false });
         const { data: n } = await supabase.from('notes').select('sign_name, real_name, dharma_name, id_2');
@@ -242,8 +251,7 @@ export default function RegistrationApp() {
       if (supabase) {
           const { error } = await client.from('system_options').insert([{ category, value: newOptionValue.trim() }]);
           if (error) alert('新增失敗'); else { setNewOptionValue(''); fetchOptions(); }
-      } else if (mockDb) {
-          if(!mockDb.system_options) mockDb.system_options = [];
+      } else {
           mockDb.system_options.push({id: Date.now(), category, value: newOptionValue.trim()});
           setNewOptionValue(''); fetchOptions();
       }
@@ -255,7 +263,7 @@ export default function RegistrationApp() {
       if (supabase) {
           const { error } = await client.from('system_options').delete().eq('id', id);
           if (error) alert('刪除失敗'); else fetchOptions();
-      } else if (mockDb && mockDb.system_options) {
+      } else {
          mockDb.system_options = mockDb.system_options.filter((o:any)=>o.id!==id); 
          fetchOptions();
       }
@@ -277,7 +285,7 @@ export default function RegistrationApp() {
       if(supabase) { 
         const { error } = await client.from('user_permissions').update({ is_disabled: !status }).eq('email', email);
         if(!error) fetchAllUsers();
-      } else if (mockDb && mockDb.user_permissions) {
+      } else {
          mockDb.user_permissions = mockDb.user_permissions.map((u:any)=>u.email===email ? {...u, is_disabled: !status} : u);
          fetchAllUsers();
       }
@@ -298,8 +306,8 @@ export default function RegistrationApp() {
     if (supabase) {
         const { error } = await supabase.from('bulletins').insert([{ content: bulletinText, image_url: bulletinImage }]);
         if (error) alert('失敗:' + error.message); else { alert('成功'); setBulletinText(''); setBulletinImage(''); fetchBulletins(); }
-    } else if (mockDb) {
-        if(!mockDb.bulletins) mockDb.bulletins = [];
+    } else {
+        alert('預覽模式發布成功');
         mockDb.bulletins.unshift({id: Date.now(), content: bulletinText, image_url: bulletinImage});
         fetchBulletins();
     }
@@ -327,7 +335,7 @@ export default function RegistrationApp() {
           setNotes(prev => prev.map(n => n.id === id ? { ...n, is_deleted: !currentStatus } : n));
           if (isAdmin) fetchAllUsers();
         }
-    } else if (mockDb && mockDb.notes) {
+    } else {
         mockDb.notes = mockDb.notes.map((n: any) => n.id === id ? { ...n, is_deleted: !currentStatus } : n);
         setNotes(prev => prev.map(n => n.id === id ? { ...n, is_deleted: !currentStatus } : n));
     }
@@ -456,8 +464,7 @@ export default function RegistrationApp() {
   useEffect(() => {
     const init = async () => {
         if (!supabase) { // Mock Mode
-            if(!mockDb) mockDb = { notes: [], bulletins: [], user_permissions: [], users: [], login_history: [], system_options: [] };
-            setNotes(mockDb.notes || []); setBulletins(mockDb.bulletins || []); fetchOptions();
+            setNotes(mockDb.notes); setBulletins(mockDb.bulletins); fetchOptions();
             return;
         }
         const { data: { user } } = await supabase.auth.getUser();
@@ -606,37 +613,8 @@ export default function RegistrationApp() {
                        <button onClick={handleAdminAddUser} className="bg-blue-600 text-white px-3 py-1 rounded text-sm">新增</button>
                     </div>
                  </div>
-                 {/* [修改] 調整欄位順序與內容 */}
-                 <table className="w-full text-sm text-left">
-                    <thead className="bg-gray-50">
-                        <tr>
-                            <th className="p-2">登入者姓名(填表人)</th>
-                            <th className="p-2">法名</th>
-                            <th className="p-2">身份證ID後4碼</th>
-                            <th className="p-2">修改密碼</th>
-                            <th className="p-2">停用</th>
-                            <th className="p-2 text-right">報名筆數</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                       {allUsers.map(u=>(
-                          <tr key={u.id} className="border-b">
-                             <td className="p-2">{u.display_name}</td>
-                             <td className="p-2">{u.dharma || '-'}</td>
-                             <td className="p-2">{u.id_last4}</td>
-                             <td className="p-2">
-                                <button onClick={() => { setPwdTargetUser(u); setShowPwdModal(true); }} className="text-blue-600 hover:text-blue-800 text-xs border border-blue-200 px-2 py-1 rounded bg-blue-50">重設</button>
-                             </td>
-                             <td className="p-2">
-                                <button onClick={()=>handleToggleUserDisabled(u.email, u.is_disabled)} className={`px-2 py-1 rounded text-xs border ${u.is_disabled ? 'bg-green-50 text-green-600 border-green-200' : 'bg-red-50 text-red-600 border-red-200'}`}>
-                                    {u.is_disabled ? '啟用' : '停用'}
-                                </button>
-                             </td>
-                             <td className="p-2 text-right font-medium text-blue-600">{u.count}</td>
-                          </tr>
-                       ))}
-                    </tbody>
-                 </table>
+                 {/* [使用者管理列表] - 完全移除表格 */}
+                 {/* Table has been removed per your request */}
               </div>
            )}
 
