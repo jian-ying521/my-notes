@@ -1,19 +1,23 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef } from 'react';
-// [正式版] 直接引用 Supabase，不再註解
-import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 
 // ==========================================
-// [⚠️ Vercel 部署設定指南]
-//
-// 1. 確保 package.json 有: "@supabase/supabase-js"
-// 2. 確保 Vercel > Settings > Environment Variables 有設定 URL 和 KEY
+// [⚠️ Vercel 部署檢查清單]
+// 1. 確保 package.json 有安裝 "@supabase/supabase-js"
+// 2. 確保 Vercel 環境變數 (Environment Variables) 已設定:
+//    - NEXT_PUBLIC_SUPABASE_URL
+//    - NEXT_PUBLIC_SUPABASE_ANON_KEY
+// 3. 部署前，請將下方 import 的註解解除！
 // ==========================================
 
-// --- 全域變數 ---
+// [步驟 1] 部署到 Vercel 時，請解除下方這一行的註解
+// import { createClient } from '@supabase/supabase-js';
+import { createClient } from '@supabase/supabase-js';
+// [步驟 2] 部署到 Vercel 時，請刪除或註解掉下方這個替代函式
+
+// --- 全域變數宣告 ---
 let mockUser: any = null;
-// 僅保留必要的初始結構，避免 undefined 錯誤
 let mockDb: any = {
   notes: [],
   bulletins: [],
@@ -23,43 +27,27 @@ let mockDb: any = {
   system_options: []
 };
 
-// --- [正式連線函式] ---
-const createClient = (url: string, key: string, options?: any) => {
-  return createSupabaseClient(url, key, options);
-};
-
-// --- Helper Functions ---
+// --- 安全取得 Supabase Client ---
 const getSupabase = () => {
-  let url = '';
-  let key = '';
-  
   try {
-    if (typeof process !== 'undefined' && process.env) {
-      url = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-      key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    if (url && key) {
+      return createClient(url, key);
     }
-  } catch (e) { console.error('Env error', e); }
-
-  if (url && key) {
-    return createClient(url, key);
+  } catch (e) {
+    // 忽略環境變數讀取錯誤 (發生在某些預覽環境)
   }
-  
-  console.error('❌ 錯誤：未偵測到 Supabase 環境變數。請在 Vercel 設定 Environment Variables。');
-  return null; 
+  return null;
 };
 
-// --- Component ---
 export default function RegistrationApp() {
+  // === 1. 狀態定義 ===
   const [notes, setNotes] = useState<any[]>([]);
   const [bulletins, setBulletins] = useState<any[]>([]);
   const [allUsers, setAllUsers] = useState<any[]>([]); 
   const [user, setUser] = useState<any>(null);
   
-  // 建立 Supabase 連線
-  const supabase = getSupabase(); 
-
-  const FAKE_DOMAIN = "@my-notes.com";
-
   const [teamBigOptions, setTeamBigOptions] = useState<any[]>([]);
   const [teamSmallOptions, setTeamSmallOptions] = useState<any[]>([]);
   
@@ -94,7 +82,10 @@ export default function RegistrationApp() {
     need_help: false, memo: ''
   });
   
-  // === Utils ===
+  const supabase = getSupabase();
+  const FAKE_DOMAIN = "@my-notes.com";
+
+  // === 2. 工具函式 ===
   const encodeName = (name: string) => {
     try { let hex = ''; for (let i = 0; i < name.length; i++) hex += ('0000' + name.charCodeAt(i).toString(16)).slice(-4); return hex; } catch { return name; }
   };
@@ -107,14 +98,15 @@ export default function RegistrationApp() {
   const getIdLast4FromEmail = (email: string) => {
     const fullName = decodeName(email); return (fullName.length > 4 && !isNaN(Number(fullName.slice(-4)))) ? fullName.slice(-4) : '';
   };
-  const isExpired = (d: string, t: string) => { if(!d) return false; return new Date(`${d}T${t||'23:59:59'}`) < new Date(); };
   const getTomorrowDate = () => {
     const d = new Date(); d.setDate(d.getDate() + 1);
     return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
   };
   const minStartDate = getTomorrowDate();
 
-  // === Actions (Functions) ===
+  // === 3. 資料讀取函式 (Fetch Functions) ===
+  // 必須定義在操作函式之前，避免 ReferenceError
+
   const handleLogout = useCallback(async () => {
     if (supabase) await supabase.auth.signOut();
     setUser(null); setNotes([]); setBulletins([]); setUsername(''); setIdLast4(''); setPassword('');
@@ -132,28 +124,25 @@ export default function RegistrationApp() {
       } catch (e) { console.error(e); }
   }, [supabase, handleLogout]);
 
-  // 讀取選項
   const fetchOptions = useCallback(async () => {
     if (!supabase) return;
     try {
-      // 大隊
       const { data: bigDataRaw } = await supabase.from('system_options').select('*').eq('category', 'team_big').order('created_at', { ascending: true });
       const bigData = bigDataRaw || [];
       setTeamBigOptions(bigData);
       
-      // 小隊
       const { data: smallDataRaw } = await supabase.from('system_options').select('*').eq('category', 'team_small').order('created_at', { ascending: true });
       const smallData = smallDataRaw || [];
       setTeamSmallOptions(smallData);
-
     } catch (e) { console.error(e); }
   }, [supabase]);
 
-  const fetchBulletins = async () => {
+  const fetchBulletins = useCallback(async () => {
     if (!supabase) return;
     const { data } = await supabase.from('bulletins').select('*').order('created_at', { ascending: false });
-    if(data) setBulletins(data);
-  };
+    // [修正] 加入 || [] 避免 null 賦值給 array
+    setBulletins(data || []);
+  }, [supabase]);
 
   const fetchAllUsers = useCallback(async () => {
     if (!supabase) return;
@@ -162,19 +151,23 @@ export default function RegistrationApp() {
 
     const { data: p } = await supabase.from('user_permissions').select('*').order('created_at', { ascending: false });
     const { data: n } = await supabase.from('notes').select('sign_name, real_name, dharma_name, id_2');
+    
+    // [修正] 加入 || []
     pData = p || [];
     nData = n || [];
 
     if (pData) {
        setAllUsers(pData.map((u: any) => {
-           const matchName = `${u.user_name} (${u.id_last4})`;
-           // 比對: 姓名+ID
-           const count = (nData || []).filter((n:any) => n.id_2 === u.id_last4 && n.sign_name.includes(u.user_name)).length;
-           const note = (nData || []).find((n:any) => n.id_2 === u.id_last4 && n.real_name === u.user_name && n.dharma_name);
+           const userName = u.user_name || '未設定';
+           const userIdLast4 = u.id_last4 || '????';
+           
+           const count = nData.filter((n:any) => n.id_2 === userIdLast4 && n.sign_name.includes(userName)).length;
+           const note = nData.find((n:any) => n.id_2 === userIdLast4 && n.real_name === userName && n.dharma_name);
            
            return { 
              ...u, 
-             display_name: u.user_name, 
+             display_name: userName,
+             id_last4: userIdLast4, 
              dharma: note?.dharma_name || '', 
              count 
            };
@@ -182,10 +175,32 @@ export default function RegistrationApp() {
     }
   }, [supabase]);
 
-  const fetchNotes = async (targetUser: any = user) => {
+  const fetchNotes = useCallback(async () => {
       if(!supabase) return;
       const { data } = await supabase.from('notes').select('*').order('start_date', { ascending: true }).order('start_time', { ascending: true });
-      if(data) setNotes(data);
+      // [修正] 加入 || []
+      setNotes(data || []);
+  }, [supabase]);
+
+  // === 4. 操作函式 (Handlers) ===
+
+  const handleInitializeDefaults = async () => {
+      if (!confirm('確定要匯入預設選項嗎？')) return;
+      if (!supabase) return;
+      setLoading(true);
+      const defaultBig = ['觀音隊', '文殊隊', '普賢隊', '地藏隊', '彌勒隊'];
+      const defaultSmall = ['第1小隊', '第2小隊', '第3小隊', '第4小隊', '第5小隊'];
+      const insertPayload = [
+          ...defaultBig.map(v => ({ category: 'team_big', value: v })),
+          ...defaultSmall.map(v => ({ category: 'team_small', value: v }))
+      ];
+      const { error } = await supabase.from('system_options').insert(insertPayload);
+      if (error) alert('匯入失敗：' + error.message);
+      else {
+          alert('預設選項匯入成功！');
+          fetchOptions();
+      }
+      setLoading(false);
   };
 
   const handleAddOption = async (category: string) => {
@@ -210,9 +225,8 @@ export default function RegistrationApp() {
     if (data.length === 0) return alert("無資料");
     const csvContent = "\ufeff" + ["大隊,小隊,精舍,姓名,身分證後四碼,法名,動作,開始日,開始時,結束日,結束時,協助,備註,登記時間,填表人,已刪除"].join(',') + '\n' + 
         data.map(n => `${n.team_big},${n.team_small},${n.monastery},${n.real_name},${n.id_2},${n.dharma_name},${n.action_type},${n.start_date},${n.start_time},${n.end_date},${n.end_time},${n.need_help?'是':'否'},"${(n.memo||'').replace(/"/g,'""')}",${n.created_at},${n.sign_name},${n.is_deleted?'是':''}`).join('\n');
-    const csvString = csvContent;
     const link = document.createElement('a');
-    link.href = URL.createObjectURL(new Blob([csvString], { type: 'text/csv;charset=utf-8;' }));
+    link.href = URL.createObjectURL(new Blob([csvContent], { type: 'text/csv;charset=utf-8;' }));
     link.download = 'export.csv';
     link.click();
   };
@@ -221,6 +235,7 @@ export default function RegistrationApp() {
       if(!supabase) return;
       const { error } = await supabase.from('user_permissions').update({ is_disabled: !status }).eq('email', email);
       if(!error) fetchAllUsers();
+      else alert('更新失敗: ' + error.message);
   };
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -253,8 +268,10 @@ export default function RegistrationApp() {
     if (!currentStatus && !confirm('確定刪除?')) return;
     if (!supabase) return;
     setLoading(true);
+    // [修正] data 可能為 null, 增加 || []
     const { data, error } = await supabase.from('notes').update({ is_deleted: !currentStatus }).eq('id', id).select();
-    if (error || (data && data.length===0)) alert('更新失敗或無權限 (請檢查 RLS)');
+    const result = data || [];
+    if (error || result.length === 0) alert('更新失敗或無權限 (請檢查 RLS)');
     else {
       setNotes(prev => prev.map(n => n.id === id ? { ...n, is_deleted: !currentStatus } : n));
       if (isAdmin) fetchAllUsers();
@@ -285,12 +302,17 @@ export default function RegistrationApp() {
 
      if (supabase && process.env.NEXT_PUBLIC_SUPABASE_URL) {
          try {
-             // 建立臨時 Client 防止管理員被登出
+             // 建立臨時 Client，避免管理員被登出
+             // 注意: 此處在部署後會使用正式的 createClient
              const tempClient = createSupabaseClient(
                  process.env.NEXT_PUBLIC_SUPABASE_URL,
                  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
                  { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } }
              );
+
+             // 如果 createSupabaseClient 仍是預覽用的空函式，這裡會出錯，提醒用戶解除註解
+             // @ts-ignore
+             if (!tempClient.auth) throw new Error("請解除 createSupabaseClient 的註解並部署");
 
              const { data, error } = await tempClient.auth.signUp({ 
                  email: email, 
@@ -353,7 +375,7 @@ export default function RegistrationApp() {
       }
   };
 
-  // Effects
+  // === 5. Effects (Hooks) ===
   useEffect(() => { 
       if (isAdmin) {
           if (activeTab === 'admin_users') fetchAllUsers();
@@ -369,14 +391,14 @@ export default function RegistrationApp() {
         if(user) {
             const name = getDisplayNameOnly(user.email||'');
             setFormData(p => ({...p, real_name: name}));
-            fetchNotes(user);
+            fetchNotes();
             fetchBulletins();
             fetchOptions();
             checkUserStatus(user.email||'');
         }
     };
     init();
-  }, [fetchOptions, checkUserStatus, supabase]);
+  }, [fetchNotes, fetchBulletins, fetchOptions, checkUserStatus, supabase]);
 
   // UI
   const openPwdModal = (target: any) => {
@@ -391,7 +413,7 @@ export default function RegistrationApp() {
 
   return (
     <div className="min-h-screen bg-amber-50 flex flex-col items-center py-10 px-4 font-sans text-gray-900">
-      <h1 className="text-3xl font-bold text-amber-900 mb-8 tracking-wide">一一報名系統 (Formal)</h1>
+      <h1 className="text-3xl font-bold text-amber-900 mb-8 tracking-wide">一一報名系統 (v2.3)</h1>
 
       {!user ? (
         <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-sm border border-amber-200">
@@ -493,6 +515,7 @@ export default function RegistrationApp() {
                     <h4 className="font-bold mb-2">大隊選項</h4>
                     <ul>{teamBigOptions.map(o=><li key={o.id} className="flex justify-between border-b p-1"><span>{o.value}</span><button onClick={()=>handleDeleteOption(o.id)} className="text-red-500 text-xs">刪</button></li>)}</ul>
                     <div className="flex mt-2 gap-1"><input className="border p-1 flex-1" placeholder="新增..." value={selectedCategory==='team_big'?newOptionValue:''} onChange={e=>{setNewOptionValue(e.target.value);setSelectedCategory('team_big')}} /><button onClick={()=>handleAddOption('team_big')} className="bg-gray-200 px-2">+</button></div>
+                    <button onClick={handleInitializeDefaults} className="text-xs text-blue-500 mt-2 underline">匯入預設選項</button>
                  </div>
                  <div>
                     <h4 className="font-bold mb-2">小隊選項</h4>
@@ -523,6 +546,7 @@ export default function RegistrationApp() {
                        <button onClick={handleAdminAddUser} className="bg-blue-600 text-white px-3 py-1 rounded text-sm">新增</button>
                     </div>
                  </div>
+                 {/* 使用者管理列表 */}
                  <table className="w-full text-sm text-left">
                     <thead className="bg-gray-50">
                         <tr>
