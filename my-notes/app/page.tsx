@@ -7,13 +7,12 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 // 1. 請確保有安裝: npm install @supabase/supabase-js
 // 2. 解除下方 import 的註解。
 // 3. 刪除下方 [預覽用替代定義] 的區塊。
-// 4. 解除下方 [正式連線函式] 的註解。
-// 5. 註解掉下方 [模擬連線函式] 的區塊。
+// 4. 確保 Vercel 環境變數有設定 URL 和 ANON_KEY。
 // ==========================================
 
 // [步驟 1] 部署到 Vercel 時，請解除下方這一行的註解
-// import { createClient as createSupabaseClient } from '@supabase/supabase-js';
-import { createClient as createSupabaseClient } from '@supabase/supabase-js';
+// import { createClient } from '@supabase/supabase-js';
+import { createClient } from '@supabase/supabase-js';
 
 
 // --- 全域變數宣告 ---
@@ -36,17 +35,6 @@ let mockDb: any = {
     { id: 8, category: 'team_small', value: '第3小隊' }, { id: 9, category: 'team_small', value: '第4小隊' }, { id: 10, category: 'team_small', value: '第5小隊' }
   ]
 };
-
-// --- [正式連線函式] (部署時請解除註解) ---
-/*
-const createClient = (url: string, key: string, options?: any) => {
-  return createSupabaseClient(url, key, options);
-};
-*/
-const createClient = (url: string, key: string, options?: any) => {
-  return createSupabaseClient(url, key, options);
-};
-
 
 // --- Helper Functions ---
 const getSupabase = () => {
@@ -106,6 +94,8 @@ export default function RegistrationApp() {
   const [addUserLast4, setAddUserLast4] = useState('');
   const [addUserPwd, setAddUserPwd] = useState('');
 
+  const [minStartDate, setMinStartDate] = useState('');
+
   const [formData, setFormData] = useState({
     team_big: '', team_small: '', monastery: '', real_name: '', dharma_name: '',
     action_type: '新增', start_date: '', start_time: '', end_date: '', end_time: '',
@@ -125,12 +115,13 @@ export default function RegistrationApp() {
   const getIdLast4FromEmail = (email: string) => {
     const fullName = decodeName(email); return (fullName.length > 4 && !isNaN(Number(fullName.slice(-4)))) ? fullName.slice(-4) : '';
   };
-  const isExpired = (d: string, t: string) => { if(!d) return false; return new Date(`${d}T${t||'23:59:59'}`) < new Date(); };
-  const getTomorrowDate = () => {
-    const d = new Date(); d.setDate(d.getDate() + 1);
-    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-  };
-  const minStartDate = getTomorrowDate();
+  
+  useEffect(() => {
+    const d = new Date(); 
+    d.setDate(d.getDate() + 1);
+    const dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    setMinStartDate(dateStr);
+  }, []);
 
   // === Actions (Functions) ===
   const handleLogout = useCallback(async () => {
@@ -161,12 +152,12 @@ export default function RegistrationApp() {
       } catch (e) { console.error(e); }
   }, [supabase, client, handleLogout]);
 
-  // 讀取選項，不強制使用預設值
+  // 讀取選項
   const fetchOptions = useCallback(async () => {
     try {
+      // 嘗試從 DB 抓取選項
       const { data: bigDataRaw } = await client.from('system_options').select('*').eq('category', 'team_big').order('created_at', { ascending: true });
       const bigData = bigDataRaw || [];
-      // 若 Mock 模式且 DB 空，才使用 MockData
       const finalBig = (!supabase && bigData.length === 0 && mockDb?.system_options) ? 
                        mockDb.system_options.filter((o:any)=>o.category==='team_big') : bigData;
       setTeamBigOptions(finalBig);
@@ -203,13 +194,16 @@ export default function RegistrationApp() {
 
     if (pData) {
        setAllUsers(pData.map((u: any) => {
-           const matchName = `${u.user_name} (${u.id_last4})`;
-           const count = (nData || []).filter((n:any) => n.id_2 === u.id_last4 && n.sign_name.includes(u.user_name)).length;
-           const note = (nData || []).find((n:any) => n.id_2 === u.id_last4 && n.real_name === u.user_name && n.dharma_name);
+           const userName = u.user_name || '未設定';
+           const userIdLast4 = u.id_last4 || '????';
+           
+           const count = (nData || []).filter((n:any) => n.id_2 === userIdLast4 && n.sign_name.includes(userName)).length;
+           const note = (nData || []).find((n:any) => n.id_2 === userIdLast4 && n.real_name === userName && n.dharma_name);
            
            return { 
              ...u, 
-             display_name: u.user_name, 
+             display_name: userName,
+             id_last4: userIdLast4, 
              dharma: note?.dharma_name || '', 
              count 
            };
@@ -282,6 +276,7 @@ export default function RegistrationApp() {
       if(supabase) { 
         const { error } = await client.from('user_permissions').update({ is_disabled: !status }).eq('email', email);
         if(!error) fetchAllUsers();
+        else alert('更新失敗: ' + error.message);
       } else {
          mockDb.user_permissions = mockDb.user_permissions.map((u:any)=>u.email===email ? {...u, is_disabled: !status} : u);
          fetchAllUsers();
@@ -299,15 +294,10 @@ export default function RegistrationApp() {
 
   const handlePostBulletin = async () => {
     if (!bulletinText && !bulletinImage) return alert('請輸入內容');
+    if (!supabase) return;
     setLoading(true);
-    if (supabase) {
-        const { error } = await supabase.from('bulletins').insert([{ content: bulletinText, image_url: bulletinImage }]);
-        if (error) alert('失敗:' + error.message); else { alert('成功'); setBulletinText(''); setBulletinImage(''); fetchBulletins(); }
-    } else {
-        alert('預覽模式發布成功');
-        mockDb.bulletins.unshift({id: Date.now(), content: bulletinText, image_url: bulletinImage});
-        fetchBulletins();
-    }
+    const { error } = await supabase.from('bulletins').insert([{ content: bulletinText, image_url: bulletinImage }]);
+    if (error) alert('失敗:' + error.message); else { alert('成功'); setBulletinText(''); setBulletinImage(''); fetchBulletins(); }
     setLoading(false);
   };
 
@@ -321,17 +311,15 @@ export default function RegistrationApp() {
 
   const handleToggleDeleteNote = async (id: number, currentStatus: boolean) => {
     if (!currentStatus && !confirm('確定刪除?')) return;
+    if (!supabase) return;
     setLoading(true);
-    if (supabase) {
-        const { data, error } = await supabase.from('notes').update({ is_deleted: !currentStatus }).eq('id', id).select();
-        if (error || (data && data.length===0)) alert('更新失敗或無權限 (請檢查 RLS)');
-        else {
-          setNotes(prev => prev.map(n => n.id === id ? { ...n, is_deleted: !currentStatus } : n));
-          if (isAdmin) fetchAllUsers();
-        }
-    } else {
-        mockDb.notes = mockDb.notes.map((n: any) => n.id === id ? { ...n, is_deleted: !currentStatus } : n);
-        setNotes(prev => prev.map(n => n.id === id ? { ...n, is_deleted: !currentStatus } : n));
+    // [修正] data 可能為 null, 增加 || []
+    const { data, error } = await supabase.from('notes').update({ is_deleted: !currentStatus }).eq('id', id).select();
+    const result = data || [];
+    if (error || result.length === 0) alert('更新失敗或無權限 (請檢查 RLS)');
+    else {
+      setNotes(prev => prev.map(n => n.id === id ? { ...n, is_deleted: !currentStatus } : n));
+      if (isAdmin) fetchAllUsers();
     }
     setLoading(false);
   };
@@ -358,15 +346,10 @@ export default function RegistrationApp() {
 
      if (supabase && process.env.NEXT_PUBLIC_SUPABASE_URL) {
          try {
-             // @ts-ignore
-             if (typeof createSupabaseClient !== 'function' || createSupabaseClient.toString().includes('return {}')) {
-                alert('請在程式碼上方解除 createSupabaseClient 的註解並部署，才能使用此功能。');
-                setLoading(false);
-                return;
-             }
-
-             // @ts-ignore
-             const tempClient = createSupabaseClient(
+             // 建立臨時 Client，避免管理員被登出
+             // 使用 any 繞過 TypeScript 檢查
+             const createClientAny = createClient as any;
+             const tempClient = createClientAny(
                  process.env.NEXT_PUBLIC_SUPABASE_URL,
                  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
                  { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } }
@@ -462,16 +445,13 @@ export default function RegistrationApp() {
 
   useEffect(() => {
     const init = async () => {
-        if (!supabase) { // Mock Mode
-            setNotes(mockDb.notes); setBulletins(mockDb.bulletins); fetchOptions();
-            return;
-        }
+        if (!supabase) return;
         const { data: { user } } = await supabase.auth.getUser();
         setUser(user);
         if(user) {
             const name = getDisplayNameOnly(user.email||'');
             setFormData(p => ({...p, real_name: name}));
-            fetchNotes(user);
+            fetchNotes();
             fetchBulletins();
             fetchOptions();
             checkUserStatus(user.email||'');
@@ -486,6 +466,10 @@ export default function RegistrationApp() {
     setNewPassword('');
     setShowPwdModal(true);
   };
+
+  if (!supabase) {
+      return <div className="p-10 text-center text-red-500 font-bold">⚠️ 系統未連接資料庫。請在 Vercel 設定環境變數。</div>;
+  }
 
   return (
     <div className="min-h-screen bg-amber-50 flex flex-col items-center py-10 px-4 font-sans text-gray-900">
@@ -622,7 +606,7 @@ export default function RegistrationApp() {
                        <button onClick={handleAdminAddUser} className="bg-blue-600 text-white px-3 py-1 rounded text-sm">新增</button>
                     </div>
                  </div>
-                 {/* 使用者管理列表 */}
+                 {/* [使用者管理列表] 確認欄位 */}
                  <table className="w-full text-sm text-left">
                     <thead className="bg-gray-50">
                         <tr>
