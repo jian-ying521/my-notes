@@ -146,8 +146,10 @@ export default function RegistrationApp() {
 
   const isAdmin = user ? getDisplayNameOnly(user.email || '') === ADMIN_ACCOUNT : false;
 
+  // 讀取系統選項
   const fetchOptions = useCallback(async () => {
     try {
+      // 讀取大隊選項
       const { data: bigData } = await supabase
         .from('system_options')
         .select('*')
@@ -155,12 +157,14 @@ export default function RegistrationApp() {
         .order('created_at', { ascending: true }); 
       
       setTeamBigOptions(bigData || []);
+      // 若有資料，設定預設值
       if (bigData && bigData.length > 0) {
           setFormData(prev => ({...prev, team_big: prev.team_big || bigData[0].value}));
       } else {
           setTeamBigOptions([{id: 0, value: '觀音隊'}]); 
       }
 
+      // 讀取小隊選項
       const { data: smallData } = await supabase
         .from('system_options')
         .select('*')
@@ -176,6 +180,7 @@ export default function RegistrationApp() {
     } catch (e) { console.error(e); }
   }, [supabase]);
 
+  // 新增選項
   const handleAddOption = async (category: 'team_big' | 'team_small') => {
       if (!newOptionValue.trim()) return alert('請輸入選項名稱');
       setLoading(true);
@@ -190,6 +195,7 @@ export default function RegistrationApp() {
       setLoading(false);
   };
 
+  // 刪除選項
   const handleDeleteOption = async (id: number) => {
       if (!confirm('確定刪除此選項？')) return;
       setLoading(true);
@@ -199,6 +205,7 @@ export default function RegistrationApp() {
       setLoading(false);
   };
 
+  // [新增] 匯入預設選項
   const handleInitializeDefaults = async () => {
       if (!confirm('確定要匯入預設選項嗎？\n(若資料庫已有資料，建議不要重複執行)')) return;
       
@@ -317,6 +324,7 @@ export default function RegistrationApp() {
     setLoading(false);
   };
 
+  // [修改] 報名資料軟刪除 (更新版：加入回傳檢查)
   const handleToggleDeleteNote = async (id: number, currentStatus: boolean) => {
     if (!currentStatus && !confirm('確定要標記「刪除」此報名資料嗎？\n(資料仍會保留在列表中，但會顯示為刪除)')) return;
 
@@ -342,8 +350,10 @@ export default function RegistrationApp() {
     if (error) {
       alert('更新失敗：' + error.message);
     } else if (data && data.length === 0) {
-      alert('權限錯誤：無法修改資料。請檢查 RLS。');
+      // 這裡如果回傳空陣列，代表 RLS 擋下了 update 操作
+      alert('權限錯誤：無法修改資料。\n請確認 Supabase 已建立 UPDATE 的 RLS 政策。\n(請參考檔案最上方的 SQL 指令)');
     } else {
+      // 成功
       setNotes(prev => prev.map(n => n.id === id ? { ...n, is_deleted: newStatus } : n));
       if (isAdmin) fetchAllUsers();
     }
@@ -409,26 +419,11 @@ export default function RegistrationApp() {
     setLoading(false);
   };
 
-  const handleAdminDeleteUser = async (targetId: string) => {
-    if (!confirm('確定要刪除此使用者嗎？此動作無法復原！')) return;
-    setLoading(true);
-
-    if (process.env.NEXT_PUBLIC_SUPABASE_URL) {
-        alert('提示：由於 Supabase 安全限制，前端無法直接刪除使用者。\n請使用 Supabase Dashboard 進行操作。');
-    } else {
-        // @ts-ignore
-        if (supabase.auth.admin && supabase.auth.admin.deleteUser) {
-             // @ts-ignore
-             await supabase.auth.admin.deleteUser(targetId);
-             alert('[模擬] 使用者已刪除');
-             fetchAllUsers(); 
-        }
-    }
-    setLoading(false);
-  };
-
+  // [修改] 統計報名者與筆數
+  // 關鍵修正：將 Group By 邏輯改為 ID + Name，避免同名不同 ID 混淆
   const fetchAllUsers = useCallback(async () => {
     let allNotes = [];
+    
     try {
         if (mockDb && mockDb.notes) {
             allNotes = [...mockDb.notes];
@@ -444,22 +439,38 @@ export default function RegistrationApp() {
         allNotes.forEach((note: any) => {
             let displayName = note.sign_name;
             let idPart = note.id_2 || '';
-            if (!displayName) displayName = '未知使用者';
-            else if (displayName.includes('(')) {
+
+            if (!displayName) {
+                displayName = '未知使用者';
+            } else if (displayName.includes('(')) {
+                // 如果 sign_name 已經包含 ID (舊資料格式 "Name (ID)")，嘗試解析出 ID
+                // 但為了分開計算，我們還是以 id_2 欄位為最準確的依據
                 const parts = displayName.split('(');
                 if (parts.length > 1) {
-                    idPart = parts[1].replace(')', '').trim();
+                    // 如果 id_2 是空的，試著從 sign_name 補回來
+                    if (!idPart) idPart = parts[1].replace(')', '').trim();
                 }
             }
 
-            if (!userMap.has(displayName)) {
-                userMap.set(displayName, {
-                    display_name: displayName, 
+            // 核心修正：使用 ID 作為 Map 的 Key，確保不同 ID 的人分開
+            // 如果 id_2 為空，則退而求其次用 displayName
+            const uniqueKey = idPart ? `${displayName}-${idPart}` : displayName;
+
+            if (!userMap.has(uniqueKey)) {
+                // 顯示名稱處理：如果 displayName 已經包含 ID，就直接顯示
+                // 如果不包含，我們手動組合 "Name (ID)" 以便在列表中清楚區分
+                let finalDisplayName = displayName;
+                if (idPart && !displayName.includes(idPart)) {
+                    finalDisplayName = `${displayName} (${idPart})`;
+                }
+
+                userMap.set(uniqueKey, {
+                    display_name: finalDisplayName, // 列表顯示用
                     id_last4: idPart,
                     count: 0
                 });
             }
-            userMap.get(displayName).count += 1;
+            userMap.get(uniqueKey).count += 1;
         });
 
         setAllUsers(Array.from(userMap.values()));
@@ -524,9 +535,7 @@ export default function RegistrationApp() {
       await supabase.from('login_history').insert([
         { real_name: name, action: action }
       ]);
-    } catch (e) {
-      console.error('紀錄登入失敗', e);
-    }
+    } catch (e) { console.error('紀錄登入失敗', e); }
   };
 
   const handleSubmit = async () => {
@@ -594,21 +603,17 @@ export default function RegistrationApp() {
     if (!user) return;
     const AUTO_LOGOUT_TIME = 15 * 60 * 1000; 
     let timeoutId: NodeJS.Timeout;
-
     const performAutoLogout = () => {
       alert("您已閒置超過 15 分鐘，系統將自動登出以確保安全。");
       handleLogout();
     };
-
     const resetTimer = () => {
       clearTimeout(timeoutId);
       timeoutId = setTimeout(performAutoLogout, AUTO_LOGOUT_TIME);
     };
-
     const events = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart'];
     events.forEach(event => document.addEventListener(event, resetTimer));
     resetTimer();
-
     return () => {
       clearTimeout(timeoutId);
       events.forEach(event => document.removeEventListener(event, resetTimer));
@@ -618,23 +623,14 @@ export default function RegistrationApp() {
   const handleSignUp = async () => {
     if (!username || !idLast4 || !password) return alert("請輸入完整資料");
     if (idLast4.length !== 4) return alert("身分證後四碼必須為 4 位數字");
-
     setLoading(true);
     const uniqueId = username + idLast4;
     const email = encodeName(uniqueId) + FAKE_DOMAIN; 
-    
     const { error } = await supabase.auth.signUp({ 
       email, 
       password,
-      options: {
-        data: {
-          display_name: username,
-          full_name: username,
-          id_last4: idLast4
-        }
-      }
+      options: { data: { display_name: username, full_name: username, id_last4: idLast4 } }
     });
-    
     if (error) alert('註冊失敗：' + error.message);
     else {
       alert('註冊成功！系統已為您登入。');
@@ -643,7 +639,6 @@ export default function RegistrationApp() {
       setFormData(prev => ({ ...prev, real_name: username }));
       fetchNotes(user);
       fetchBulletins();
-      // 管理員檢查
       if (username.toLowerCase() === ADMIN_ACCOUNT) {
           fetchAllUsers();
       }
@@ -657,7 +652,6 @@ export default function RegistrationApp() {
     setLoading(true);
     const uniqueId = username + idLast4;
     const email = encodeName(uniqueId) + FAKE_DOMAIN;
-
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) {
       alert('登入失敗：' + error.message);
@@ -666,7 +660,6 @@ export default function RegistrationApp() {
       setFormData(prev => ({ ...prev, real_name: username }));
       fetchNotes(data.user);
       fetchBulletins();
-      // 管理員檢查
       if (username.toLowerCase() === ADMIN_ACCOUNT) {
           fetchAllUsers();
       }
@@ -821,13 +814,7 @@ export default function RegistrationApp() {
                  <div><label className="block text-sm font-medium text-gray-700 mb-1">6. 新增異動 <span className="text-red-500">*必填</span></label><select className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900" value={formData.action_type} onChange={(e) => setFormData({...formData, action_type: e.target.value})}><option value="新增">新增</option><option value="異動">異動</option></select></div>
                  <div className="lg:col-span-2"><label className="block text-sm font-medium text-gray-700 mb-1">7. 發心起日/時 <span className="text-red-500">*必填</span></label><div className="flex gap-2"><input type="date" className="flex-1 p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900" value={formData.start_date} onChange={(e) => setFormData({...formData, start_date: e.target.value})} /><input type="time" className="flex-1 p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900" value={formData.start_time} onChange={(e) => setFormData({...formData, start_time: e.target.value})} /></div></div>
                  <div className="lg:col-span-2"><label className="block text-sm font-medium text-gray-700 mb-1">8. 發心迄日/時 <span className="text-red-500">*必填</span></label><div className="flex gap-2"><input type="date" className="flex-1 p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900" value={formData.end_date} onChange={(e) => setFormData({...formData, end_date: e.target.value})} /><input type="time" className="flex-1 p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900" value={formData.end_time} onChange={(e) => setFormData({...formData, end_time: e.target.value})} /></div></div>
-                 <div className="md:col-span-2 lg:col-span-4">
-                   <label className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition">
-                     <input type="checkbox" className="w-5 h-5 text-amber-600 rounded focus:ring-amber-500" checked={formData.need_help} onChange={(e) => setFormData({...formData, need_help: e.target.checked})} />
-                     <span className="text-gray-700 font-medium">9. 是否需要協助報名 (是)</span>
-                   </label>
-                   <p className="text-xs text-gray-500 mt-1 ml-9">若在普台學校及中台週邊的居士，需師父協助報名，請勾選。</p>
-                 </div>
+                 <div className="md:col-span-2 lg:col-span-4"><label className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition"><input type="checkbox" className="w-5 h-5 text-amber-600 rounded focus:ring-amber-500" checked={formData.need_help} onChange={(e) => setFormData({...formData, need_help: e.target.checked})} /><span className="text-gray-700 font-medium">9. 是否需要協助報名 (是)</span></label><p className="text-xs text-gray-500 mt-1 ml-9">若在普台學校及中台週邊的居士，需師父協助報名，請勾選。</p></div>
                  <div className="md:col-span-2 lg:col-span-4"><label className="block text-sm font-medium text-gray-700 mb-1">10. 備註</label><textarea rows={2} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900" value={formData.memo} onChange={(e) => setFormData({...formData, memo: e.target.value})} /></div>
                </div>
                <button onClick={handleSubmit} className="w-full bg-amber-700 text-white py-4 rounded-lg font-bold hover:bg-amber-800 transition shadow-lg text-lg mt-8">送出發心資料</button>
@@ -939,8 +926,12 @@ export default function RegistrationApp() {
                    </div>
                  </div>
 
-                 {/* 使用者列表表格 */}
-                 <p className="text-sm text-gray-500 mb-2">有報名過的使用者，才會出現在列表上</p>
+                 {/* [修改] 提示訊息 */}
+                 <div className="flex justify-between items-center mb-2">
+                    <p className="text-sm text-gray-500">有報名過的使用者，才會出現在列表上</p>
+                    <p className="text-xs text-red-500 bg-red-50 px-2 py-1 rounded">⚠️ 欲修改使用者資料，請至後端，以註冊者權限修改</p>
+                 </div>
+                 
                  <div className="bg-white rounded-lg border border-gray-200 overflow-hidden overflow-x-auto">
                     <table className="min-w-full divide-y divide-gray-200">
                         <thead className="bg-gray-50">
