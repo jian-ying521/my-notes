@@ -13,9 +13,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 // [步驟 1] 部署到 Vercel 時，請解除下方這一行的註解
 // import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
-// --- [預覽用替代定義 - 開始] (部署時請刪除此區塊) ---
 
-// --- [預覽用替代定義 - 結束] ------------------------
 
 // --- 全域變數宣告 ---
 let mockUser: any = null;
@@ -47,7 +45,6 @@ const createClient = (url: string, key: string, options?: any) => {
 const createClient = (url: string, key: string, options?: any) => {
   return createSupabaseClient(url, key, options);
 };
-
 
 // --- Helper Functions ---
 const getSupabase = () => {
@@ -162,26 +159,34 @@ export default function RegistrationApp() {
       } catch (e) { console.error(e); }
   }, [supabase, client, handleLogout]);
 
-  // 讀取選項，不強制使用預設值
+  // [修改] 移除強制預設值邏輯
   const fetchOptions = useCallback(async () => {
     try {
       const { data: bigDataRaw } = await client.from('system_options').select('*').eq('category', 'team_big').order('created_at', { ascending: true });
       const bigData = bigDataRaw || [];
-      setTeamBigOptions(bigData);
+      // [修正] 如果資料庫是空的，也不要填入預設選項，保持空陣列
+      // 只有在完全沒有環境變數的純模擬模式下，才使用 mockDb
+      const finalBig = (!supabase && bigData.length === 0 && mockDb?.system_options) ? 
+                       mockDb.system_options.filter((o:any)=>o.category==='team_big') : bigData;
       
-      if (bigData.length > 0) {
-        setFormData(p => ({...p, team_big: p.team_big || bigData[0].value}));
-      }
+      setTeamBigOptions(finalBig);
+      
+      // 不強制設定表單預設值，除非使用者已選擇或有資料
+      // setFormData(p => ({...p, team_big: p.team_big || (finalBig.length > 0 ? finalBig[0].value : '')}));
 
       const { data: smallDataRaw } = await client.from('system_options').select('*').eq('category', 'team_small').order('created_at', { ascending: true });
       const smallData = smallDataRaw || [];
-      setTeamSmallOptions(smallData);
+      
+      const finalSmall = (!supabase && smallData.length === 0 && mockDb?.system_options) ? 
+                         mockDb.system_options.filter((o:any)=>o.category==='team_small') : smallData;
 
-      if (smallData.length > 0) {
-        setFormData(p => ({...p, team_small: p.team_small || smallData[0].value}));
-      }
+      setTeamSmallOptions(finalSmall);
+      
+      // 不強制設定表單預設值
+      // setFormData(p => ({...p, team_small: p.team_small || (finalSmall.length > 0 ? finalSmall[0].value : '')}));
+
     } catch (e) { console.error(e); }
-  }, [client]);
+  }, [client, supabase]);
 
   const fetchBulletins = async () => {
     if (!client) return;
@@ -208,6 +213,7 @@ export default function RegistrationApp() {
        setAllUsers(pData.map((u: any) => {
            const matchName = `${u.user_name} (${u.id_last4})`;
            const count = (nData || []).filter((n:any) => n.id_2 === u.id_last4 && n.sign_name.includes(u.user_name)).length;
+           // 嘗試抓法名 (比對 ID 和姓名)
            const note = (nData || []).find((n:any) => n.id_2 === u.id_last4 && n.real_name === u.user_name && n.dharma_name);
            
            return { 
@@ -543,8 +549,18 @@ export default function RegistrationApp() {
            {activeTab === 'form' && (
              <div className="bg-white p-6 rounded shadow border border-amber-200">
                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                  <div className="flex flex-col gap-1"><label className="text-sm">1. 大隊*</label><select className="border p-2 rounded" value={formData.team_big} onChange={e=>setFormData({...formData, team_big:e.target.value})}>{teamBigOptions.map(o=><option key={o.id} value={o.value}>{o.value}</option>)}</select></div>
-                  <div className="flex flex-col gap-1"><label className="text-sm">2. 小隊*</label><select className="border p-2 rounded" value={formData.team_small} onChange={e=>setFormData({...formData, team_small:e.target.value})}>{teamSmallOptions.map(o=><option key={o.id} value={o.value}>{o.value}</option>)}</select></div>
+                  <div className="flex flex-col gap-1"><label className="text-sm">1. 大隊*</label>
+                  <select className="border p-2 rounded" value={formData.team_big} onChange={e=>setFormData({...formData, team_big:e.target.value})}>
+                      <option value="">請選擇...</option>
+                      {teamBigOptions.map(o=><option key={o.id} value={o.value}>{o.value}</option>)}
+                  </select>
+                  </div>
+                  <div className="flex flex-col gap-1"><label className="text-sm">2. 小隊*</label>
+                  <select className="border p-2 rounded" value={formData.team_small} onChange={e=>setFormData({...formData, team_small:e.target.value})}>
+                      <option value="">請選擇...</option>
+                      {teamSmallOptions.map(o=><option key={o.id} value={o.value}>{o.value}</option>)}
+                  </select>
+                  </div>
                   <div className="flex flex-col gap-1"><label className="text-sm">3. 精舍* (限2字)</label><input className="border p-2 rounded" value={formData.monastery} onChange={e=>setFormData({...formData, monastery:e.target.value})} /></div>
                   <div className="flex flex-col gap-1"><label className="text-sm">4. 姓名*</label><input className="border p-2 rounded" value={formData.real_name} onChange={e=>setFormData({...formData, real_name:e.target.value})} /></div>
                   <div className="flex flex-col gap-1"><label className="text-sm">5. 法名</label><input className="border p-2 rounded" value={formData.dharma_name} onChange={e=>setFormData({...formData, dharma_name:e.target.value})} /></div>
@@ -613,8 +629,37 @@ export default function RegistrationApp() {
                        <button onClick={handleAdminAddUser} className="bg-blue-600 text-white px-3 py-1 rounded text-sm">新增</button>
                     </div>
                  </div>
-                 {/* [使用者管理列表] - 完全移除表格 */}
-                 {/* Table has been removed per your request */}
+                 {/* [修正] 使用者管理列表欄位 */}
+                 <table className="w-full text-sm text-left">
+                    <thead className="bg-gray-50">
+                        <tr>
+                            <th className="p-2">登入者姓名(填表人)</th>
+                            <th className="p-2">法名</th>
+                            <th className="p-2">身份證ID後4碼</th>
+                            <th className="p-2">修改密碼</th>
+                            <th className="p-2">停用</th>
+                            <th className="p-2 text-right">報名筆數</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                       {allUsers.map(u=>(
+                          <tr key={u.id} className="border-b">
+                             <td className="p-2">{u.display_name}</td>
+                             <td className="p-2">{u.dharma || '-'}</td>
+                             <td className="p-2">{u.id_last4}</td>
+                             <td className="p-2">
+                                <button onClick={() => { setPwdTargetUser(u); setShowPwdModal(true); }} className="text-blue-600 hover:text-blue-800 text-xs border border-blue-200 px-2 py-1 rounded bg-blue-50">重設</button>
+                             </td>
+                             <td className="p-2">
+                                <button onClick={()=>handleToggleUserDisabled(u.email, u.is_disabled)} className={`px-2 py-1 rounded text-xs border ${u.is_disabled ? 'bg-green-50 text-green-600 border-green-200' : 'bg-red-50 text-red-600 border-red-200'}`}>
+                                    {u.is_disabled ? '啟用' : '停用'}
+                                </button>
+                             </td>
+                             <td className="p-2 text-right font-medium text-blue-600">{u.count}</td>
+                          </tr>
+                       ))}
+                    </tbody>
+                 </table>
               </div>
            )}
 
