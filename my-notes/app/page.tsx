@@ -13,7 +13,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 // 3. [刪除] 下方的「模擬連線區塊 (B)」的內容 (但請保留最上方的變數宣告)
 // ==========================================
 
-// --- 全域變數宣告 (請保留此處，避免刪除區塊後報錯) ---
+// --- 全域變數宣告 ---
 let mockUser: any = null;
 let mockDb: any = undefined; 
 
@@ -202,8 +202,6 @@ export default function RegistrationApp() {
       setLoading(false);
   };
 
-  // [移除] handleInitializeDefaults 功能
-
   const exportToExcel = () => {
     const dataToExport = getFilteredNotes();
     if (dataToExport.length === 0) {
@@ -212,7 +210,7 @@ export default function RegistrationApp() {
     }
     const headers = [
       "大隊", "小隊", "精舍", "姓名", "身分證後四碼", "法名", "動作", 
-      "開始日期", "開始時間", "結束日期", "結束時間", "需協助", "備註", "登記時間", "填表人"
+      "開始日期", "開始時間", "結束日期", "結束時間", "需協助", "備註", "登記時間", "填表人", "是否刪除"
     ];
     const csvRows = [
       headers.join(','),
@@ -231,7 +229,8 @@ export default function RegistrationApp() {
         note.need_help ? '是' : '否',
         `"${(note.memo || '').replace(/"/g, '""')}"`,
         new Date(note.created_at).toLocaleDateString(),
-        note.sign_name || '' 
+        note.sign_name || '',
+        note.is_deleted ? '已刪除' : ''
       ].join(','))
     ];
     const csvString = csvRows.join('\n');
@@ -409,7 +408,6 @@ export default function RegistrationApp() {
     setLoading(false);
   };
 
-  // [修改] 讀取所有使用者 (統計報名筆數)
   const fetchAllUsers = useCallback(async () => {
     let allNotes = [];
     try {
@@ -425,40 +423,37 @@ export default function RegistrationApp() {
 
         const userMap = new Map();
         allNotes.forEach((note: any) => {
-            // [關鍵修改] 這裡的邏輯：
-            // 我們要找的是「填表人」的資料。
-            // 由於系統沒有獨立的使用者設定檔，我們嘗試從報名表中，找出該填表人「自己幫自己報名」的那一筆資料，來取得他的法名。
-            
-            // 1. 解析填表人姓名 (格式: 姓名 (ID))
-            let signerNameRaw = note.sign_name || '未知使用者';
-            let pureSignerName = signerNameRaw;
-            let idPart = note.id_2 || ''; // 預設使用該筆資料的 ID
+            let displayName = note.sign_name;
+            let idPart = note.id_2 || '';
 
-            if (signerNameRaw.includes('(')) {
-                const parts = signerNameRaw.split('(');
-                pureSignerName = parts[0].trim();
-                idPart = parts[1].replace(')', '').trim();
+            if (!displayName) {
+                displayName = '未知使用者';
+            } else if (displayName.includes('(')) {
+                const parts = displayName.split('(');
+                if (parts.length > 1) {
+                    idPart = parts[1].replace(')', '').trim();
+                }
             }
 
-            // 2. 建立 Key
-            const uniqueKey = `${pureSignerName}-${idPart}`;
+            // 使用 ID + Name 作為 Key
+            const uniqueKey = `${displayName}-${idPart}`;
 
             if (!userMap.has(uniqueKey)) {
                 userMap.set(uniqueKey, {
-                    display_name: pureSignerName,
+                    display_name: displayName, 
                     id_last4: idPart,
-                    dharma: '', // 預設法名為空
+                    dharma: '', 
                     count: 0
                 });
             }
 
             const currentUser = userMap.get(uniqueKey);
             currentUser.count += 1;
-
-            // 3. 嘗試抓取法名：
-            // 如果這筆資料的「報名者姓名 (real_name)」等於「填表人姓名 (pureSignerName)」，
-            // 那我們就假設這筆資料的法名，就是填表人的法名。
-            if (note.real_name === pureSignerName && note.dharma_name) {
+            
+            // 嘗試抓取法名 (只抓自己報名的)
+            // 這裡邏輯改為：只要該報名紀錄的 real_name 跟填表人 displayName 類似（去除ID後），就認為是本人的資料
+            const pureSignName = displayName.split('(')[0].trim();
+            if (note.real_name === pureSignName && note.dharma_name) {
                 currentUser.dharma = note.dharma_name;
             }
         });
@@ -542,7 +537,6 @@ export default function RegistrationApp() {
     if (formData.dharma_name && formData.dharma_name.length > 2) return alert('法名欄位限填2個字');
     
     const currentId2 = getIdLast4FromEmail(user.email || '');
-    // [修改] sign_name 只寫入姓名 (不再包含 ID)
     const signNameOnly = getDisplayNameOnly(user.email || '');
 
     const insertData = {
@@ -644,6 +638,7 @@ export default function RegistrationApp() {
       setFormData(prev => ({ ...prev, real_name: username }));
       fetchNotes(user);
       fetchBulletins();
+      // 管理員檢查
       if (username.toLowerCase() === ADMIN_ACCOUNT) {
           fetchAllUsers();
       }
@@ -666,6 +661,7 @@ export default function RegistrationApp() {
       setFormData(prev => ({ ...prev, real_name: username }));
       fetchNotes(data.user);
       fetchBulletins();
+      // 管理員檢查
       if (username.toLowerCase() === ADMIN_ACCOUNT) {
           fetchAllUsers();
       }
@@ -820,7 +816,13 @@ export default function RegistrationApp() {
                  <div><label className="block text-sm font-medium text-gray-700 mb-1">6. 新增異動 <span className="text-red-500">*必填</span></label><select className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900" value={formData.action_type} onChange={(e) => setFormData({...formData, action_type: e.target.value})}><option value="新增">新增</option><option value="異動">異動</option></select></div>
                  <div className="lg:col-span-2"><label className="block text-sm font-medium text-gray-700 mb-1">7. 發心起日/時 <span className="text-red-500">*必填</span></label><div className="flex gap-2"><input type="date" className="flex-1 p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900" value={formData.start_date} onChange={(e) => setFormData({...formData, start_date: e.target.value})} /><input type="time" className="flex-1 p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900" value={formData.start_time} onChange={(e) => setFormData({...formData, start_time: e.target.value})} /></div></div>
                  <div className="lg:col-span-2"><label className="block text-sm font-medium text-gray-700 mb-1">8. 發心迄日/時 <span className="text-red-500">*必填</span></label><div className="flex gap-2"><input type="date" className="flex-1 p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900" value={formData.end_date} onChange={(e) => setFormData({...formData, end_date: e.target.value})} /><input type="time" className="flex-1 p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900" value={formData.end_time} onChange={(e) => setFormData({...formData, end_time: e.target.value})} /></div></div>
-                 <div className="md:col-span-2 lg:col-span-4"><label className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition"><input type="checkbox" className="w-5 h-5 text-amber-600 rounded focus:ring-amber-500" checked={formData.need_help} onChange={(e) => setFormData({...formData, need_help: e.target.checked})} /><span className="text-gray-700 font-medium">9. 是否需要協助報名 (是)</span></label><p className="text-xs text-gray-500 mt-1 ml-9">若在普台學校及中台週邊的居士，需師父協助報名，請勾選。</p></div>
+                 <div className="md:col-span-2 lg:col-span-4">
+                   <label className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition">
+                     <input type="checkbox" className="w-5 h-5 text-amber-600 rounded focus:ring-amber-500" checked={formData.need_help} onChange={(e) => setFormData({...formData, need_help: e.target.checked})} />
+                     <span className="text-gray-700 font-medium">9. 是否需要協助報名 (是)</span>
+                   </label>
+                   <p className="text-xs text-gray-500 mt-1 ml-9">若在普台學校及中台週邊的居士，需師父協助報名，請勾選。</p>
+                 </div>
                  <div className="md:col-span-2 lg:col-span-4"><label className="block text-sm font-medium text-gray-700 mb-1">10. 備註</label><textarea rows={2} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900" value={formData.memo} onChange={(e) => setFormData({...formData, memo: e.target.value})} /></div>
                </div>
                <button onClick={handleSubmit} className="w-full bg-amber-700 text-white py-4 rounded-lg font-bold hover:bg-amber-800 transition shadow-lg text-lg mt-8">送出發心資料</button>
@@ -942,7 +944,7 @@ export default function RegistrationApp() {
                     <table className="min-w-full divide-y divide-gray-200">
                         <thead className="bg-gray-50">
                             <tr>
-                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">登入者姓名 (填表人)</th>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">填表人 (法名)</th>
                                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">ID 後四碼</th>
                                 <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">報名筆數</th>
                             </tr>
@@ -950,7 +952,7 @@ export default function RegistrationApp() {
                         <tbody className="divide-y divide-gray-200">
                             {allUsers.length > 0 ? allUsers.map(u => (
                                 <tr key={u.id} className="hover:bg-gray-50">
-                                    {/* [修改] 顯示欄位：姓名、ID、筆數 */}
+                                    {/* [修改] 顯示欄位：姓名(法名)、ID、筆數 */}
                                     <td className="px-4 py-3 text-sm font-medium text-gray-900">{u.display_name} {u.dharma ? `(${u.dharma})` : ''}</td>
                                     <td className="px-4 py-3 text-sm text-gray-500">{u.id_last4}</td>
                                     <td className="px-4 py-3 text-right text-sm font-medium text-blue-600">{u.count} 筆</td>
@@ -987,8 +989,6 @@ export default function RegistrationApp() {
                               onChange={(e) => { setNewOptionValue(e.target.value); setSelectedCategory('team_big'); }} />
                        <button onClick={() => handleAddOption('team_big')} className="text-sm bg-gray-600 text-white px-3 rounded hover:bg-gray-700">新增</button>
                     </div>
-                    {/* [新增] 匯入預設選項按鈕 */}
-                    <button onClick={handleInitializeDefaults} className="mt-4 text-xs text-blue-500 hover:text-blue-700 underline">匯入預設選項 (若列表為空請點此)</button>
                   </div>
 
                   {/* 小隊設定 */}
