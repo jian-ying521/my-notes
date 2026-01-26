@@ -48,26 +48,22 @@ const createClient = (url: string, key: string, options?: any) => {
   return createSupabaseClient(url, key, options);
 };
 
+
 // --- Helper Functions ---
 const getSupabase = () => {
   let url = '';
   let key = '';
   
-  // 安全地存取 process.env
   try {
     if (typeof process !== 'undefined' && process.env) {
       url = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
       key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
     }
-  } catch (e) {
-    // 忽略錯誤
-  }
+  } catch (e) { }
 
-  // 簡單判斷：如果環境變數存在且不是預設文字，就使用正式 Client
   if (url && key && !url.includes('your-project')) {
     return createClient(url, key);
   }
-  // 否則回傳 null
   return null; 
 };
 
@@ -78,14 +74,11 @@ export default function RegistrationApp() {
   const [allUsers, setAllUsers] = useState<any[]>([]); 
   const [user, setUser] = useState<any>(null);
   
-  // 這裡使用 lazy init 避免 SSR 錯誤
   const supabase = getSupabase(); 
-  // 若 supabase 為 null，代表處於預覽模式，我們使用一個 local 的 mock client
   const client = supabase || createClient('mock','mock'); 
 
   const FAKE_DOMAIN = "@my-notes.com";
 
-  // 選項資料
   const [teamBigOptions, setTeamBigOptions] = useState<any[]>([]);
   const [teamSmallOptions, setTeamSmallOptions] = useState<any[]>([]);
   
@@ -150,7 +143,6 @@ export default function RegistrationApp() {
   const checkUserStatus = useCallback(async (email: string) => {
       if (!email) return;
       try {
-          // 如果是模擬模式，直接查 mockDb
           if (!supabase) {
              const perm = mockDb.user_permissions.find((u:any) => u.email === email);
              if (perm) {
@@ -168,7 +160,6 @@ export default function RegistrationApp() {
       } catch (e) { console.error(e); }
   }, [supabase, client, handleLogout]);
 
-  // 2. 定義資料讀取函式 (fetch*)
   const fetchOptions = useCallback(async () => {
     try {
       const { data: bigData } = await client.from('system_options').select('*').eq('category', 'team_big').order('created_at', { ascending: true });
@@ -216,10 +207,8 @@ export default function RegistrationApp() {
 
     if (pData) {
        setAllUsers(pData.map((u: any) => {
-           // 比對: 姓名(user_name) + ID後4碼(id_last4)
+           const matchName = `${u.user_name} (${u.id_last4})`;
            const count = (nData || []).filter((n:any) => n.id_2 === u.id_last4 && n.sign_name.includes(u.user_name)).length;
-           
-           // 抓取法名: 找到一筆該使用者(相同ID且姓名相符)的報名資料，取其 dharma_name
            const note = (nData || []).find((n:any) => n.id_2 === u.id_last4 && n.real_name === u.user_name && n.dharma_name);
            
            return { 
@@ -239,7 +228,6 @@ export default function RegistrationApp() {
       else if(!supabase) setNotes(mockDb.notes);
   };
 
-  // 3. 定義操作函式 (handle*)
   const handleInitializeDefaults = async () => {
       if (!confirm('確定要匯入預設選項嗎？')) return;
       setLoading(true);
