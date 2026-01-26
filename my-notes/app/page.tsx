@@ -26,15 +26,14 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js';
   
   alter table user_permissions enable row level security;
   
-  -- 允許所有已登入者讀取
-  create policy "Allow read for authenticated" on user_permissions for select to authenticated using (true);
+  -- 1. 允許所有人讀取 (讓前端能判斷權限)
+  create policy "Allow read for all" on user_permissions for select to public using (true);
   
-  -- 關鍵：允許「任何人」(包含剛註冊還沒驗證Email的人) 寫入權限表
-  -- 這樣註冊時才能同步寫入資料
-  create policy "Allow insert for anon/authenticated" on user_permissions for insert to public with check (true);
+  -- 2. 關鍵：允許所有人新增 (解決註冊時無法寫入的問題)
+  create policy "Allow insert for all" on user_permissions for insert to public with check (true);
   
-  -- 允許已登入者修改 (例如管理員修改狀態)
-  create policy "Allow update for authenticated" on user_permissions for update to authenticated using (true);
+  -- 3. 允許所有人修改 (讓管理員能改狀態，或使用者改自己資料)
+  create policy "Allow update for all" on user_permissions for update to public using (true);
 */
 // ==========================================
 
@@ -56,9 +55,6 @@ const createClient = () => {
   const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
   return createSupabaseClient(supabaseUrl, supabaseKey);
 };
-
-
-
 
 
 export default function RegistrationApp() {
@@ -328,26 +324,46 @@ export default function RegistrationApp() {
     setShowPwdModal(false);
   };
 
-  // [修改] 修正 Admin Add User 邏輯
+  // [修正] 管理員新增使用者，並同步寫入 user_permissions
   const handleAdminAddUser = async () => {
-     const { error } = await supabase.auth.signUp({ email: encodeName(addUserName+addUserLast4)+FAKE_DOMAIN, password: addUserPwd, options: { data: { display_name: addUserName, id_last4: addUserLast4 } } });
-     if (error) alert(error.message);
-     else {
-        // 同步寫入權限表
-        const { error: permError } = await supabase.from('user_permissions').insert([{ 
-            email: encodeName(addUserName+addUserLast4)+FAKE_DOMAIN, 
-            is_admin: false, 
-            is_disabled: false, 
-            user_name: addUserName, 
-            id_last4: addUserLast4 
-        }]);
-        
-        if (permError) alert('使用者建立成功，但寫入權限表失敗：' + permError.message);
-        else {
-            alert('建立成功'); 
-            fetchAllUsers();
-        }
+     if(!addUserName || !addUserLast4 || !addUserPwd) return alert('請輸入完整資料');
+     const email = encodeName(addUserName+addUserLast4) + FAKE_DOMAIN;
+     
+     setLoading(true);
+
+     // 1. 註冊 Supabase Auth User
+     const { error } = await supabase.auth.signUp({ 
+         email: email, 
+         password: addUserPwd, 
+         options: { data: { display_name: addUserName, id_last4: addUserLast4 } } 
+     });
+
+     if (error) {
+         alert('Auth 註冊失敗: ' + error.message);
+         setLoading(false);
+         return;
      }
+
+     // 2. 同步寫入 user_permissions (因為 RLS 允許 insert，所以即使登入身分改變也能寫入)
+     const { error: permError } = await supabase.from('user_permissions').insert([{ 
+         email: email, 
+         is_admin: false, 
+         is_disabled: false, 
+         user_name: addUserName, 
+         id_last4: addUserLast4 
+     }]);
+     
+     if (permError) {
+         alert('使用者已建立，但權限表寫入失敗: ' + permError.message);
+     } else {
+        alert('建立成功');
+        // 重置表單
+        setAddUserName('');
+        setAddUserLast4('');
+        setAddUserPwd('');
+        fetchAllUsers();
+     }
+     setLoading(false);
   };
 
   const handleAdminDeleteUser = async (targetId: string) => {
@@ -433,23 +449,31 @@ export default function RegistrationApp() {
     }
   };
 
-  // [修改] 修正 SignUp 邏輯
+  // [修正] 自行註冊時，也同步寫入 user_permissions
   const handleSignUp = async () => {
       const email = encodeName(username+idLast4) + FAKE_DOMAIN;
       const { error } = await supabase.auth.signUp({ email, password, options: { data: { display_name: username, id_last4: idLast4 } } });
       if(error) alert(error.message);
       else {
-          // 同步寫入權限表
-          await supabase.from('user_permissions').insert([{ 
+          const { error: permError } = await supabase.from('user_permissions').insert([{ 
               email, 
               is_admin: false, 
               is_disabled: false, 
               user_name: username, 
               id_last4: idLast4    
           }]);
+          
+          if(permError) console.error('Perm insert fail', permError);
+
           alert('註冊成功');
           window.location.reload();
       }
+  };
+
+  const openPwdModal = (target: any) => {
+    setPwdTargetUser(target);
+    setNewPassword('');
+    setShowPwdModal(true);
   };
 
   return (
