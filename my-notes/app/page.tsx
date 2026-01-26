@@ -1,11 +1,9 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef } from 'react';
-// 1. 引入 Supabase 套件
-import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 
 // ==========================================
-// [⚠️ 環境切換說明]
+// [⚠️ 環境切換說明：請在 VS Code 中閱讀此段]
 //
 // 目前為了讓您在線上能看到畫面，預設開啟 [模擬模式]。
 // 當您要部署到 Vercel 時，請執行以下 3 步驟：
@@ -15,13 +13,14 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 // 3. [刪除] 下方的「模擬連線區塊 (B)」的內容 (但請保留最上方的變數宣告)
 // ==========================================
 
-// --- 全域變數宣告 ---
+// --- 全域變數宣告 (請保留此處，避免刪除區塊後報錯) ---
 let mockUser: any = null;
 let mockDb: any = undefined; 
 
 // --- [A. 正式連線區塊] (請在 VS Code 中解除這裡的註解) ---
 /*
-// ⚠️ 這裡直接建立 Client，不要 import 外部檔案，避免 Vercel 找不到路徑
+import { createClient as createSupabaseClient } from '@supabase/supabase-js';
+
 const createClient = () => {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
   const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -29,12 +28,13 @@ const createClient = () => {
 };
 */
 
+import { createClient as createSupabaseClient } from '@supabase/supabase-js';
+
 const createClient = () => {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
   const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
   return createSupabaseClient(supabaseUrl, supabaseKey);
 };
-
 
 
 
@@ -59,18 +59,22 @@ export default function RegistrationApp() {
   const [activeTab, setActiveTab] = useState<'form' | 'history' | 'admin_data' | 'admin_users' | 'admin_settings' | 'bulletin'>('bulletin');
   const [filterMonth, setFilterMonth] = useState('');
 
+  // 公告欄位
   const [bulletinText, setBulletinText] = useState('');
   const [bulletinImage, setBulletinImage] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // 修改密碼相關 State
   const [showPwdModal, setShowPwdModal] = useState(false);
   const [newPassword, setNewPassword] = useState('');
   const [pwdTargetUser, setPwdTargetUser] = useState<any>(null);
 
+  // 管理員新增使用者相關 State
   const [addUserName, setAddUserName] = useState('');
   const [addUserLast4, setAddUserLast4] = useState('');
   const [addUserPwd, setAddUserPwd] = useState('');
 
+  // 設定管理員帳號
   const ADMIN_ACCOUNT = 'admin'; 
 
   const [formData, setFormData] = useState({
@@ -141,32 +145,35 @@ export default function RegistrationApp() {
 
   const isAdmin = user ? getDisplayNameOnly(user.email || '') === ADMIN_ACCOUNT : false;
 
+  // 讀取系統選項
   const fetchOptions = useCallback(async () => {
     try {
+      // 讀取大隊選項
       const { data: bigData } = await supabase
         .from('system_options')
         .select('*')
         .eq('category', 'team_big')
         .order('created_at', { ascending: true }); 
       
-      setTeamBigOptions(bigData || []);
       if (bigData && bigData.length > 0) {
+          setTeamBigOptions(bigData);
           setFormData(prev => ({...prev, team_big: prev.team_big || bigData[0].value}));
       } else {
-          setTeamBigOptions([{id: 0, value: '觀音隊'}]); 
+          setTeamBigOptions([{id: 0, value: '觀音隊'}]);
       }
 
+      // 讀取小隊選項
       const { data: smallData } = await supabase
         .from('system_options')
         .select('*')
         .eq('category', 'team_small')
         .order('created_at', { ascending: true });
 
-      setTeamSmallOptions(smallData || []);
       if (smallData && smallData.length > 0) {
+          setTeamSmallOptions(smallData);
           setFormData(prev => ({...prev, team_small: prev.team_small || smallData[0].value}));
       } else {
-          setTeamSmallOptions([{id: 0, value: '第1小隊'}]); 
+          setTeamSmallOptions([{id: 0, value: '第1小隊'}]);
       }
     } catch (e) { console.error(e); }
   }, [supabase]);
@@ -191,28 +198,6 @@ export default function RegistrationApp() {
       const { error } = await supabase.from('system_options').delete().eq('id', id);
       if (error) alert('刪除失敗: ' + error.message);
       else fetchOptions();
-      setLoading(false);
-  };
-
-  const handleInitializeDefaults = async () => {
-      if (!confirm('確定要匯入預設選項嗎？\n(若資料庫已有資料，建議不要重複執行)')) return;
-      
-      setLoading(true);
-      const defaultBig = ['觀音隊', '文殊隊', '普賢隊', '地藏隊', '彌勒隊'];
-      const defaultSmall = ['第1小隊', '第2小隊', '第3小隊', '第4小隊', '第5小隊'];
-
-      const insertPayload = [
-          ...defaultBig.map(v => ({ category: 'team_big', value: v })),
-          ...defaultSmall.map(v => ({ category: 'team_small', value: v }))
-      ];
-
-      const { error } = await supabase.from('system_options').insert(insertPayload);
-      
-      if (error) alert('匯入失敗：' + error.message);
-      else {
-          alert('預設選項匯入成功！');
-          fetchOptions();
-      }
       setLoading(false);
   };
 
@@ -400,24 +385,6 @@ export default function RegistrationApp() {
         setAddUserLast4('');
         setAddUserPwd('');
         fetchAllUsers(); 
-    }
-    setLoading(false);
-  };
-
-  const handleAdminDeleteUser = async (targetId: string) => {
-    if (!confirm('確定要刪除此使用者嗎？此動作無法復原！')) return;
-    setLoading(true);
-
-    if (process.env.NEXT_PUBLIC_SUPABASE_URL) {
-        alert('提示：由於 Supabase 安全限制，前端無法直接刪除使用者。\n請使用 Supabase Dashboard 進行操作。');
-    } else {
-        // @ts-ignore
-        if (supabase.auth.admin && supabase.auth.admin.deleteUser) {
-             // @ts-ignore
-             await supabase.auth.admin.deleteUser(targetId);
-             alert('[模擬] 使用者已刪除');
-             fetchAllUsers(); 
-        }
     }
     setLoading(false);
   };
@@ -637,7 +604,6 @@ export default function RegistrationApp() {
       setFormData(prev => ({ ...prev, real_name: username }));
       fetchNotes(user);
       fetchBulletins();
-      // 管理員檢查
       if (username.toLowerCase() === ADMIN_ACCOUNT) {
           fetchAllUsers();
       }
@@ -660,7 +626,6 @@ export default function RegistrationApp() {
       setFormData(prev => ({ ...prev, real_name: username }));
       fetchNotes(data.user);
       fetchBulletins();
-      // 管理員檢查
       if (username.toLowerCase() === ADMIN_ACCOUNT) {
           fetchAllUsers();
       }
@@ -728,26 +693,8 @@ export default function RegistrationApp() {
             <button onClick={() => setActiveTab('history')} className={`flex-1 py-3 px-2 whitespace-nowrap rounded-md font-bold transition-all ${activeTab === 'history' ? 'bg-white text-amber-800 shadow-sm' : 'text-amber-600 hover:bg-amber-200/50'}`}>📋 我的紀錄</button>
             {isAdmin && (
               <>
-                <button 
-                  onClick={() => setActiveTab('admin_data')} 
-                  className={`flex-1 py-3 px-2 whitespace-nowrap rounded-md font-bold transition-all ${
-                    activeTab === 'admin_data' 
-                      ? 'bg-red-50 text-red-800 shadow-sm border border-red-200' 
-                      : 'text-red-600 hover:bg-red-50/50'
-                  }`}
-                >
-                  📊 全部報名資料
-                </button>
-                <button 
-                  onClick={() => setActiveTab('admin_users')} 
-                  className={`flex-1 py-3 px-2 whitespace-nowrap rounded-md font-bold transition-all ${
-                    activeTab === 'admin_users' 
-                      ? 'bg-blue-50 text-blue-800 shadow-sm border border-blue-200' 
-                      : 'text-blue-600 hover:bg-blue-50/50'
-                  }`}
-                >
-                  👥 使用者
-                </button>
+                <button onClick={() => setActiveTab('admin_data')} className={`flex-1 py-3 px-2 whitespace-nowrap rounded-md font-bold transition-all ${activeTab === 'admin_data' ? 'bg-red-50 text-red-800 shadow-sm border border-red-200' : 'text-red-600 hover:bg-red-50/50'}`}>📊 全部報名資料</button>
+                <button onClick={() => setActiveTab('admin_users')} className={`flex-1 py-3 px-2 whitespace-nowrap rounded-md font-bold transition-all ${activeTab === 'admin_users' ? 'bg-blue-50 text-blue-800 shadow-sm border border-blue-200' : 'text-blue-600 hover:bg-blue-50/50'}`}>👥 使用者</button>
                 <button onClick={() => setActiveTab('admin_settings')} className={`flex-1 py-3 px-2 whitespace-nowrap rounded-md font-bold transition-all ${activeTab === 'admin_settings' ? 'bg-gray-700 text-white shadow-sm border border-gray-600' : 'text-gray-600 hover:bg-gray-200/50'}`}>⚙️ 系統設定</button>
               </>
             )}
@@ -815,13 +762,7 @@ export default function RegistrationApp() {
                  <div><label className="block text-sm font-medium text-gray-700 mb-1">6. 新增異動 <span className="text-red-500">*必填</span></label><select className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900" value={formData.action_type} onChange={(e) => setFormData({...formData, action_type: e.target.value})}><option value="新增">新增</option><option value="異動">異動</option></select></div>
                  <div className="lg:col-span-2"><label className="block text-sm font-medium text-gray-700 mb-1">7. 發心起日/時 <span className="text-red-500">*必填</span></label><div className="flex gap-2"><input type="date" className="flex-1 p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900" value={formData.start_date} onChange={(e) => setFormData({...formData, start_date: e.target.value})} /><input type="time" className="flex-1 p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900" value={formData.start_time} onChange={(e) => setFormData({...formData, start_time: e.target.value})} /></div></div>
                  <div className="lg:col-span-2"><label className="block text-sm font-medium text-gray-700 mb-1">8. 發心迄日/時 <span className="text-red-500">*必填</span></label><div className="flex gap-2"><input type="date" className="flex-1 p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900" value={formData.end_date} onChange={(e) => setFormData({...formData, end_date: e.target.value})} /><input type="time" className="flex-1 p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900" value={formData.end_time} onChange={(e) => setFormData({...formData, end_time: e.target.value})} /></div></div>
-                 <div className="md:col-span-2 lg:col-span-4">
-                   <label className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition">
-                     <input type="checkbox" className="w-5 h-5 text-amber-600 rounded focus:ring-amber-500" checked={formData.need_help} onChange={(e) => setFormData({...formData, need_help: e.target.checked})} />
-                     <span className="text-gray-700 font-medium">9. 是否需要協助報名 (是)</span>
-                   </label>
-                   <p className="text-xs text-gray-500 mt-1 ml-9">若在普台學校及中台週邊的居士，需師父協助報名，請勾選。</p>
-                 </div>
+                 <div className="md:col-span-2 lg:col-span-4"><label className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition"><input type="checkbox" className="w-5 h-5 text-amber-600 rounded focus:ring-amber-500" checked={formData.need_help} onChange={(e) => setFormData({...formData, need_help: e.target.checked})} /><span className="text-gray-700 font-medium">9. 是否需要協助報名 (是)</span></label><p className="text-xs text-gray-500 mt-1 ml-9">若在普台學校及中台週邊的居士，需師父協助報名，請勾選。</p></div>
                  <div className="md:col-span-2 lg:col-span-4"><label className="block text-sm font-medium text-gray-700 mb-1">10. 備註</label><textarea rows={2} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900" value={formData.memo} onChange={(e) => setFormData({...formData, memo: e.target.value})} /></div>
                </div>
                <button onClick={handleSubmit} className="w-full bg-amber-700 text-white py-4 rounded-lg font-bold hover:bg-amber-800 transition shadow-lg text-lg mt-8">送出發心資料</button>
@@ -984,8 +925,6 @@ export default function RegistrationApp() {
                               onChange={(e) => { setNewOptionValue(e.target.value); setSelectedCategory('team_big'); }} />
                        <button onClick={() => handleAddOption('team_big')} className="text-sm bg-gray-600 text-white px-3 rounded hover:bg-gray-700">新增</button>
                     </div>
-                    {/* [新增] 匯入預設選項按鈕 */}
-                    <button onClick={handleInitializeDefaults} className="mt-4 text-xs text-blue-500 hover:text-blue-700 underline">匯入預設選項 (若列表為空請點此)</button>
                   </div>
 
                   {/* 小隊設定 */}
