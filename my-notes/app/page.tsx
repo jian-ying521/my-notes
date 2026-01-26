@@ -50,7 +50,6 @@ const createClient = (url: string, key: string, options?: any) => {
 const getSupabase = () => {
   let url = '';
   let key = '';
-  
   try {
     if (typeof process !== 'undefined' && process.env) {
       url = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
@@ -159,31 +158,24 @@ export default function RegistrationApp() {
       } catch (e) { console.error(e); }
   }, [supabase, client, handleLogout]);
 
-  // [修改] 移除強制預設值邏輯
   const fetchOptions = useCallback(async () => {
     try {
+      // 大隊
       const { data: bigDataRaw } = await client.from('system_options').select('*').eq('category', 'team_big').order('created_at', { ascending: true });
       const bigData = bigDataRaw || [];
-      // [修正] 如果資料庫是空的，也不要填入預設選項，保持空陣列
-      // 只有在完全沒有環境變數的純模擬模式下，才使用 mockDb
+      // 若 Mock 模式且 DB 空，才使用 MockData
       const finalBig = (!supabase && bigData.length === 0 && mockDb?.system_options) ? 
                        mockDb.system_options.filter((o:any)=>o.category==='team_big') : bigData;
-      
       setTeamBigOptions(finalBig);
-      
-      // 不強制設定表單預設值，除非使用者已選擇或有資料
-      // setFormData(p => ({...p, team_big: p.team_big || (finalBig.length > 0 ? finalBig[0].value : '')}));
+      // 不再強制預設值
 
+      // 小隊
       const { data: smallDataRaw } = await client.from('system_options').select('*').eq('category', 'team_small').order('created_at', { ascending: true });
       const smallData = smallDataRaw || [];
-      
       const finalSmall = (!supabase && smallData.length === 0 && mockDb?.system_options) ? 
                          mockDb.system_options.filter((o:any)=>o.category==='team_small') : smallData;
-
       setTeamSmallOptions(finalSmall);
-      
-      // 不強制設定表單預設值
-      // setFormData(p => ({...p, team_small: p.team_small || (finalSmall.length > 0 ? finalSmall[0].value : '')}));
+      // 不再強制預設值
 
     } catch (e) { console.error(e); }
   }, [client, supabase]);
@@ -199,6 +191,7 @@ export default function RegistrationApp() {
     let pData: any[] = [];
     let nData: any[] = [];
 
+    // 強制更新機制：確保每次切換頁籤都重新拉取
     if (!supabase) {
         pData = mockDb.user_permissions || [];
         nData = mockDb.notes || [];
@@ -211,14 +204,18 @@ export default function RegistrationApp() {
 
     if (pData) {
        setAllUsers(pData.map((u: any) => {
-           const matchName = `${u.user_name} (${u.id_last4})`;
-           const count = (nData || []).filter((n:any) => n.id_2 === u.id_last4 && n.sign_name.includes(u.user_name)).length;
-           // 嘗試抓法名 (比對 ID 和姓名)
-           const note = (nData || []).find((n:any) => n.id_2 === u.id_last4 && n.real_name === u.user_name && n.dharma_name);
+           // 防呆：確保欄位有值
+           const userName = u.user_name || '未設定';
+           const userIdLast4 = u.id_last4 || '????';
+
+           const matchName = `${userName} (${userIdLast4})`;
+           const count = (nData || []).filter((n:any) => n.id_2 === userIdLast4 && n.sign_name.includes(userName)).length;
+           const note = (nData || []).find((n:any) => n.id_2 === userIdLast4 && n.real_name === userName && n.dharma_name);
            
            return { 
              ...u, 
-             display_name: u.user_name, 
+             display_name: userName, 
+             id_last4: userIdLast4,
              dharma: note?.dharma_name || '', 
              count 
            };
@@ -465,7 +462,13 @@ export default function RegistrationApp() {
   };
 
   // Effects
-  useEffect(() => { if (activeTab === 'admin_users' && isAdmin) fetchAllUsers(); }, [activeTab, isAdmin, fetchAllUsers]);
+  // [關鍵] 監聽 Tab 切換，強制重新讀取資料
+  useEffect(() => { 
+      if (isAdmin) {
+          if (activeTab === 'admin_users') fetchAllUsers();
+          if (activeTab === 'admin_settings') fetchOptions();
+      }
+  }, [activeTab, isAdmin, fetchAllUsers, fetchOptions]);
 
   useEffect(() => {
     const init = async () => {
@@ -496,7 +499,7 @@ export default function RegistrationApp() {
 
   return (
     <div className="min-h-screen bg-amber-50 flex flex-col items-center py-10 px-4 font-sans text-gray-900">
-      <h1 className="text-3xl font-bold text-amber-900 mb-8 tracking-wide">一一報名系統</h1>
+      <h1 className="text-3xl font-bold text-amber-900 mb-8 tracking-wide">一一報名系統 (v2.0)</h1>
 
       {!user ? (
         <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-sm border border-amber-200">
@@ -629,7 +632,7 @@ export default function RegistrationApp() {
                        <button onClick={handleAdminAddUser} className="bg-blue-600 text-white px-3 py-1 rounded text-sm">新增</button>
                     </div>
                  </div>
-                 {/* [修正] 使用者管理列表欄位 */}
+                 {/* [修正] 使用者管理列表欄位，已確認符合需求 */}
                  <table className="w-full text-sm text-left">
                     <thead className="bg-gray-50">
                         <tr>
