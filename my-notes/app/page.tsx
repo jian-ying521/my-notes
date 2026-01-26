@@ -30,6 +30,7 @@ let mockDb: any = {
   ],
   users: [],
   login_history: [],
+  // 模擬資料仍保留預設值，以便預覽，但在正式連線且DB為空時，不會強制填入
   system_options: [
     { id: 1, category: 'team_big', value: '觀音隊' }, { id: 2, category: 'team_big', value: '文殊隊' },
     { id: 3, category: 'team_big', value: '普賢隊' }, { id: 4, category: 'team_big', value: '地藏隊' }, { id: 5, category: 'team_big', value: '彌勒隊' },
@@ -53,7 +54,6 @@ const createClient = (url: string, key: string, options?: any) => {
 const getSupabase = () => {
   let url = '';
   let key = '';
-  
   try {
     if (typeof process !== 'undefined' && process.env) {
       url = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
@@ -160,29 +160,27 @@ export default function RegistrationApp() {
       } catch (e) { console.error(e); }
   }, [supabase, client, handleLogout]);
 
+  // [修改] 讀取選項，不強制使用預設值
   const fetchOptions = useCallback(async () => {
     try {
-      const { data: bigData } = await client.from('system_options').select('*').eq('category', 'team_big').order('created_at', { ascending: true });
-      if (bigData && bigData.length > 0) {
-          setTeamBigOptions(bigData);
-          setFormData(p => ({...p, team_big: p.team_big || bigData[0].value}));
-      } else if (!supabase) {
-          const defaultBig = mockDb.system_options.filter((o:any)=>o.category==='team_big');
-          setTeamBigOptions(defaultBig);
-          setFormData(p => ({...p, team_big: p.team_big || defaultBig[0].value}));
+      const { data: bigDataRaw } = await client.from('system_options').select('*').eq('category', 'team_big').order('created_at', { ascending: true });
+      const bigData = bigDataRaw || [];
+      setTeamBigOptions(bigData);
+      
+      // 若有選項則預設選第一個
+      if (bigData.length > 0) {
+        setFormData(p => ({...p, team_big: p.team_big || bigData[0].value}));
       }
 
-      const { data: smallData } = await client.from('system_options').select('*').eq('category', 'team_small').order('created_at', { ascending: true });
-      if (smallData && smallData.length > 0) {
-          setTeamSmallOptions(smallData);
-          setFormData(p => ({...p, team_small: p.team_small || smallData[0].value}));
-      } else if (!supabase) {
-          const defaultSmall = mockDb.system_options.filter((o:any)=>o.category==='team_small');
-          setTeamSmallOptions(defaultSmall);
-          setFormData(p => ({...p, team_small: p.team_small || defaultSmall[0].value}));
+      const { data: smallDataRaw } = await client.from('system_options').select('*').eq('category', 'team_small').order('created_at', { ascending: true });
+      const smallData = smallDataRaw || [];
+      setTeamSmallOptions(smallData);
+
+      if (smallData.length > 0) {
+        setFormData(p => ({...p, team_small: p.team_small || smallData[0].value}));
       }
     } catch (e) { console.error(e); }
-  }, [client, supabase]);
+  }, [client]);
 
   const fetchBulletins = async () => {
     if (!client) return;
@@ -209,6 +207,7 @@ export default function RegistrationApp() {
        setAllUsers(pData.map((u: any) => {
            const matchName = `${u.user_name} (${u.id_last4})`;
            const count = (nData || []).filter((n:any) => n.id_2 === u.id_last4 && n.sign_name.includes(u.user_name)).length;
+           // 嘗試抓法名 (比對 ID 和姓名)
            const note = (nData || []).find((n:any) => n.id_2 === u.id_last4 && n.real_name === u.user_name && n.dharma_name);
            
            return { 
@@ -261,9 +260,13 @@ export default function RegistrationApp() {
 
   const handleDeleteOption = async (id: number) => {
       if(!confirm('刪除?')) return;
-      const { error } = await client.from('system_options').delete().eq('id', id);
-      if (error) alert('刪除失敗'); else fetchOptions();
-      if (!supabase) { mockDb.system_options = mockDb.system_options.filter((o:any)=>o.id!==id); fetchOptions(); }
+      if (supabase) {
+          const { error } = await client.from('system_options').delete().eq('id', id);
+          if (error) alert('刪除失敗'); else fetchOptions();
+      } else {
+         mockDb.system_options = mockDb.system_options.filter((o:any)=>o.id!==id); 
+         fetchOptions();
+      }
   };
 
   const exportToExcel = () => {
@@ -357,26 +360,38 @@ export default function RegistrationApp() {
      setLoading(true);
 
      if (supabase && process.env.NEXT_PUBLIC_SUPABASE_URL) {
-         const tempClient = createSupabaseClient(
-             process.env.NEXT_PUBLIC_SUPABASE_URL,
-             process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-             { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } }
-         );
+         try {
+             // @ts-ignore
+             if (typeof createSupabaseClient !== 'function' || createSupabaseClient.toString().includes('return {}')) {
+                alert('請在程式碼上方解除 createSupabaseClient 的註解並部署，才能使用此功能。');
+                setLoading(false);
+                return;
+             }
 
-         const { data, error } = await tempClient.auth.signUp({ 
-             email: email, 
-             password: addUserPwd, 
-             options: { data: { display_name: addUserName, id_last4: addUserLast4 } } 
-         });
+             // @ts-ignore
+             const tempClient = createSupabaseClient(
+                 process.env.NEXT_PUBLIC_SUPABASE_URL,
+                 process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+                 { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } }
+             );
 
-         if (error) {
-             alert('註冊失敗: ' + error.message);
-         } else {
-             alert(`使用者 ${addUserName} 已建立！(資料已自動同步)`);
-             setAddUserName('');
-             setAddUserLast4('');
-             setAddUserPwd('');
-             fetchAllUsers();
+             const { data, error } = await tempClient.auth.signUp({ 
+                 email: email, 
+                 password: addUserPwd, 
+                 options: { data: { display_name: addUserName, id_last4: addUserLast4 } } 
+             });
+
+             if (error) {
+                 alert('註冊失敗: ' + error.message);
+             } else {
+                 alert(`使用者 ${addUserName} 已建立！(資料已自動同步)`);
+                 setAddUserName('');
+                 setAddUserLast4('');
+                 setAddUserPwd('');
+                 fetchAllUsers();
+             }
+         } catch(e:any) {
+             alert('執行錯誤: ' + e.message);
          }
      } else {
          alert(`[模擬] 使用者 ${addUserName} 已建立`);
@@ -593,6 +608,7 @@ export default function RegistrationApp() {
                        <button onClick={handleAdminAddUser} className="bg-blue-600 text-white px-3 py-1 rounded text-sm">新增</button>
                     </div>
                  </div>
+                 {/* [修改] 使用者管理列表欄位調整 */}
                  <table className="w-full text-sm text-left">
                     <thead className="bg-gray-50">
                         <tr>
