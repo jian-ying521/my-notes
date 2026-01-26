@@ -8,12 +8,12 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 // 2. 解除下方 import 的註解。
 // 3. 刪除下方 [預覽用替代定義] 的區塊。
 // 4. 解除下方 [正式連線函式] 的註解。
+// 5. 註解掉下方 [模擬連線函式] 的區塊。
 // ==========================================
 
-// [步驟 1] 部署到 Vercel 時，請解除下方這一行的註解 (使用別名 createSupabaseClient)
+// [步驟 1] 部署到 Vercel 時，請解除下方這一行的註解
 // import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
-
 
 
 // --- 全域變數宣告 ---
@@ -52,6 +52,7 @@ const createClient = (url: string, key: string, options?: any) => {
 const getSupabase = () => {
   let url = '';
   let key = '';
+  
   try {
     if (typeof process !== 'undefined' && process.env) {
       url = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
@@ -160,12 +161,12 @@ export default function RegistrationApp() {
       } catch (e) { console.error(e); }
   }, [supabase, client, handleLogout]);
 
+  // 讀取選項，不強制使用預設值
   const fetchOptions = useCallback(async () => {
     try {
-      // 嘗試從 DB 抓取選項
       const { data: bigDataRaw } = await client.from('system_options').select('*').eq('category', 'team_big').order('created_at', { ascending: true });
       const bigData = bigDataRaw || [];
-      // 只有在 mock 模式且 DB 空的時候才 fallback
+      // 若 Mock 模式且 DB 空，才使用 MockData
       const finalBig = (!supabase && bigData.length === 0 && mockDb?.system_options) ? 
                        mockDb.system_options.filter((o:any)=>o.category==='team_big') : bigData;
       setTeamBigOptions(finalBig);
@@ -202,16 +203,13 @@ export default function RegistrationApp() {
 
     if (pData) {
        setAllUsers(pData.map((u: any) => {
-           const userName = u.user_name || '未設定';
-           const userIdLast4 = u.id_last4 || '????';
-           
-           const count = (nData || []).filter((n:any) => n.id_2 === userIdLast4 && n.sign_name.includes(userName)).length;
-           const note = (nData || []).find((n:any) => n.id_2 === userIdLast4 && n.real_name === userName && n.dharma_name);
+           const matchName = `${u.user_name} (${u.id_last4})`;
+           const count = (nData || []).filter((n:any) => n.id_2 === u.id_last4 && n.sign_name.includes(u.user_name)).length;
+           const note = (nData || []).find((n:any) => n.id_2 === u.id_last4 && n.real_name === u.user_name && n.dharma_name);
            
            return { 
              ...u, 
-             display_name: userName,
-             id_last4: userIdLast4, 
+             display_name: u.user_name, 
              dharma: note?.dharma_name || '', 
              count 
            };
@@ -273,8 +271,9 @@ export default function RegistrationApp() {
     if (data.length === 0) return alert("無資料");
     const csvContent = "\ufeff" + ["大隊,小隊,精舍,姓名,身分證後四碼,法名,動作,開始日,開始時,結束日,結束時,協助,備註,登記時間,填表人,已刪除"].join(',') + '\n' + 
         data.map(n => `${n.team_big},${n.team_small},${n.monastery},${n.real_name},${n.id_2},${n.dharma_name},${n.action_type},${n.start_date},${n.start_time},${n.end_date},${n.end_time},${n.need_help?'是':'否'},"${(n.memo||'').replace(/"/g,'""')}",${n.created_at},${n.sign_name},${n.is_deleted?'是':''}`).join('\n');
+    const csvString = csvContent;
     const link = document.createElement('a');
-    link.href = URL.createObjectURL(new Blob([csvContent], { type: 'text/csv;charset=utf-8;' }));
+    link.href = URL.createObjectURL(new Blob([csvString], { type: 'text/csv;charset=utf-8;' }));
     link.download = 'export.csv';
     link.click();
   };
@@ -463,13 +462,16 @@ export default function RegistrationApp() {
 
   useEffect(() => {
     const init = async () => {
-        if (!supabase) return;
+        if (!supabase) { // Mock Mode
+            setNotes(mockDb.notes); setBulletins(mockDb.bulletins); fetchOptions();
+            return;
+        }
         const { data: { user } } = await supabase.auth.getUser();
         setUser(user);
         if(user) {
             const name = getDisplayNameOnly(user.email||'');
             setFormData(p => ({...p, real_name: name}));
-            fetchNotes();
+            fetchNotes(user);
             fetchBulletins();
             fetchOptions();
             checkUserStatus(user.email||'');
@@ -485,13 +487,9 @@ export default function RegistrationApp() {
     setShowPwdModal(true);
   };
 
-  if (!supabase) {
-      return <div className="p-10 text-center text-red-500 font-bold">⚠️ 系統未連接資料庫。請在 Vercel 設定環境變數。</div>;
-  }
-
   return (
     <div className="min-h-screen bg-amber-50 flex flex-col items-center py-10 px-4 font-sans text-gray-900">
-      <h1 className="text-3xl font-bold text-amber-900 mb-8 tracking-wide">一一報名系統 (v2.3)</h1>
+      <h1 className="text-3xl font-bold text-amber-900 mb-8 tracking-wide">一一報名系統</h1>
 
       {!user ? (
         <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-sm border border-amber-200">
@@ -624,7 +622,7 @@ export default function RegistrationApp() {
                        <button onClick={handleAdminAddUser} className="bg-blue-600 text-white px-3 py-1 rounded text-sm">新增</button>
                     </div>
                  </div>
-                 {/* [修正] 使用者管理列表欄位 */}
+                 {/* 使用者管理列表 */}
                  <table className="w-full text-sm text-left">
                     <thead className="bg-gray-50">
                         <tr>
