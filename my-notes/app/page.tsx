@@ -38,6 +38,7 @@ const createClient = () => {
 
 
 
+
 export default function RegistrationApp() {
   const [notes, setNotes] = useState<any[]>([]);
   const [bulletins, setBulletins] = useState<any[]>([]);
