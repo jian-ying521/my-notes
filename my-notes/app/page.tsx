@@ -1,23 +1,23 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef } from 'react';
-// [步驟 1] 部署到 Vercel 時，請解除下方這一行的註解
-// import { createClient as createSupabaseClient } from '@supabase/supabase-js';
-import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 
 // ==========================================
 // [⚠️ 部署 Vercel 必讀]
 // 1. 請確保有安裝: npm install @supabase/supabase-js
-// 2. 解除上方 import 的註解。
+// 2. 解除下方 import 的註解。
 // 3. 刪除下方 [預覽用替代定義] 的區塊。
 // 4. 解除下方 [正式連線函式] 的註解。
 // ==========================================
 
+// [步驟 1] 部署到 Vercel 時，請解除下方這一行的註解
+// import { createClient as createSupabaseClient } from '@supabase/supabase-js';
+import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 // --- [預覽用替代定義 - 開始] (部署時請刪除此區塊) ---
 
 // --- [預覽用替代定義 - 結束] ------------------------
 
-// --- 全域變數宣告 (移至最上方) ---
+// --- 全域變數宣告 ---
 let mockUser: any = null;
 let mockDb: any = {
   notes: [
@@ -47,7 +47,6 @@ const createClient = (url: string, key: string, options?: any) => {
 const createClient = (url: string, key: string, options?: any) => {
   return createSupabaseClient(url, key, options);
 };
-
 
 // --- Helper Functions ---
 const getSupabase = () => {
@@ -142,7 +141,6 @@ export default function RegistrationApp() {
   const minStartDate = getTomorrowDate();
 
   // === Actions (Functions) ===
-  // 1. 先定義基礎操作函式
   const handleLogout = useCallback(async () => {
     await client.auth.signOut();
     setUser(null); setNotes([]); setBulletins([]); setUsername(''); setIdLast4(''); setPassword('');
@@ -152,7 +150,7 @@ export default function RegistrationApp() {
   const checkUserStatus = useCallback(async (email: string) => {
       if (!email) return;
       try {
-          // 模擬模式檢查
+          // 如果是模擬模式，直接查 mockDb
           if (!supabase) {
              const perm = mockDb.user_permissions.find((u:any) => u.email === email);
              if (perm) {
@@ -211,17 +209,25 @@ export default function RegistrationApp() {
         nData = mockDb.notes || [];
     } else {
         const { data: p } = await supabase.from('user_permissions').select('*').order('created_at', { ascending: false });
-        const { data: n } = await supabase.from('notes').select('sign_name, real_name, dharma_name');
+        const { data: n } = await supabase.from('notes').select('sign_name, real_name, dharma_name, id_2');
         pData = p || [];
         nData = n || [];
     }
 
     if (pData) {
        setAllUsers(pData.map((u: any) => {
-           const matchName = `${u.user_name} (${u.id_last4})`;
-           const count = (nData || []).filter((n:any) => n.sign_name && n.sign_name.includes(u.user_name)).length;
-           const note = (nData || []).find((n:any) => n.sign_name === matchName && n.dharma_name);
-           return { ...u, display_name: u.user_name, dharma: note?.dharma_name || '', count };
+           // 比對: 姓名(user_name) + ID後4碼(id_last4)
+           const count = (nData || []).filter((n:any) => n.id_2 === u.id_last4 && n.sign_name.includes(u.user_name)).length;
+           
+           // 抓取法名: 找到一筆該使用者(相同ID且姓名相符)的報名資料，取其 dharma_name
+           const note = (nData || []).find((n:any) => n.id_2 === u.id_last4 && n.real_name === u.user_name && n.dharma_name);
+           
+           return { 
+             ...u, 
+             display_name: u.user_name, 
+             dharma: note?.dharma_name || '', 
+             count 
+           };
        }));
     }
   }, [supabase]);
@@ -277,10 +283,9 @@ export default function RegistrationApp() {
     if (data.length === 0) return alert("無資料");
     const csvContent = "\ufeff" + ["大隊,小隊,精舍,姓名,身分證後四碼,法名,動作,開始日,開始時,結束日,結束時,協助,備註,登記時間,填表人,已刪除"].join(',') + '\n' + 
         data.map(n => `${n.team_big},${n.team_small},${n.monastery},${n.real_name},${n.id_2},${n.dharma_name},${n.action_type},${n.start_date},${n.start_time},${n.end_date},${n.end_time},${n.need_help?'是':'否'},"${(n.memo||'').replace(/"/g,'""')}",${n.created_at},${n.sign_name},${n.is_deleted?'是':''}`).join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
+    const csvString = csvContent;
     const link = document.createElement('a');
-    link.href = url;
+    link.href = URL.createObjectURL(new Blob([csvString], { type: 'text/csv;charset=utf-8;' }));
     link.download = 'export.csv';
     link.click();
   };
@@ -320,9 +325,10 @@ export default function RegistrationApp() {
 
   const handleDeleteBulletin = async (id: number) => {
     if (!confirm('刪除?')) return;
-    const { error } = await client.from('bulletins').delete().eq('id', id);
-    if (!error) { alert('已刪除'); fetchBulletins(); }
-    if (!supabase) { mockDb.bulletins = mockDb.bulletins.filter((b:any)=>b.id!==id); fetchBulletins(); }
+    if (supabase) {
+        const { error } = await supabase.from('bulletins').delete().eq('id', id);
+        if (!error) { alert('已刪除'); fetchBulletins(); }
+    }
   };
 
   const handleToggleDeleteNote = async (id: number, currentStatus: boolean) => {
@@ -465,7 +471,7 @@ export default function RegistrationApp() {
         }
     };
     init();
-  }, [supabase, fetchOptions, checkUserStatus]);
+  }, [fetchOptions, checkUserStatus, supabase]);
 
   // UI
   const openPwdModal = (target: any) => {
@@ -600,7 +606,16 @@ export default function RegistrationApp() {
                     </div>
                  </div>
                  <table className="w-full text-sm text-left">
-                    <thead className="bg-gray-50"><tr><th className="p-2">登入者姓名(填表人)</th><th className="p-2">法名</th><th className="p-2">身份證ID後4碼</th><th className="p-2">修改密碼</th><th className="p-2">停用</th><th className="p-2 text-right">報名筆數</th></tr></thead>
+                    <thead className="bg-gray-50">
+                        <tr>
+                            <th className="p-2">登入者姓名(填表人)</th>
+                            <th className="p-2">法名</th>
+                            <th className="p-2">身份證ID後4碼</th>
+                            <th className="p-2">修改密碼</th>
+                            <th className="p-2">停用</th>
+                            <th className="p-2 text-right">報名筆數</th>
+                        </tr>
+                    </thead>
                     <tbody>
                        {allUsers.map(u=>(
                           <tr key={u.id} className="border-b">
