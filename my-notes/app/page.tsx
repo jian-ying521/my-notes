@@ -83,7 +83,14 @@ const createMockClient = (url: string, key: string, options?: any) => {
         }
         return { data: { user: mockUser }, error: null };
       },
-      updateUser: async () => ({ error: null }),
+      updateUser: async ({ password }: any) => {
+          // 模擬修改密碼
+          if (mockUser) {
+             console.log(`[模擬] 用戶 ${mockUser.email} 修改密碼為: ${password}`);
+             return { error: null };
+          }
+          return { error: { message: '未登入' } };
+      },
       admin: { 
           deleteUser: async () => ({ error: null }),
           updateUserById: async (uid: string, attributes: any) => {
@@ -149,18 +156,8 @@ const createMockClient = (url: string, key: string, options?: any) => {
   } as any;
 };
 
-// --- 統一連線入口 ---
-const createClient = (url: string, key: string, options?: any) => {
-  // @ts-ignore
-  if (!useMock && typeof _createSupabaseClient !== 'undefined') {
-      // @ts-ignore
-      return _createSupabaseClient(url, key, options);
-  }
-  return createMockClient(url, key, options);
-};
-
-// --- Helper Functions ---
-const getSupabase = () => {
+// --- 統一連線入口 (放在元件外以避免重複宣告) ---
+const createSupabaseInstance = () => {
   let url = '';
   let key = '';
   try {
@@ -170,25 +167,40 @@ const getSupabase = () => {
     }
   } catch (e) { }
 
-  if (url && key && !useMock) {
-    return createClient(url, key);
+  // @ts-ignore
+  if (!useMock && url && key && typeof _createSupabaseClient !== 'undefined') {
+      // @ts-ignore
+      return _createSupabaseClient(url, key);
   }
-  if (useMock) return createClient('mock', 'mock');
-  return null; 
+  return createMockClient('mock', 'mock');
+};
+
+// --- Helper Functions ---
+const encodeName = (name: string) => {
+    try { let hex = ''; for (let i = 0; i < name.length; i++) hex += ('0000' + name.charCodeAt(i).toString(16)).slice(-4); return hex; } catch { return name; }
+};
+const decodeName = (email: string) => {
+    try { const hex = email.split('@')[0]; let str = ''; for (let i = 0; i < hex.length; i += 4) str += String.fromCharCode(parseInt(hex.substr(i, 4), 16)); return str; } catch { return email?.split('@')[0] || ''; }
+};
+const getDisplayNameOnly = (email: string) => {
+    const fullName = decodeName(email); return (fullName.length > 4 && !isNaN(Number(fullName.slice(-4)))) ? fullName.slice(0, -4) : fullName;
+};
+const getIdLast4FromEmail = (email: string) => {
+    const fullName = decodeName(email); return (fullName.length > 4 && !isNaN(Number(fullName.slice(-4)))) ? fullName.slice(-4) : '';
 };
 
 // --- Component ---
 export default function RegistrationApp() {
+  // [修正] 使用 useMemo 確保 supabase client 只會被建立一次，解決畫面閃爍問題
+  const supabase = useMemo(() => createSupabaseInstance(), []);
+  const client = supabase; // 直接使用同一個 instance
+
   const [notes, setNotes] = useState<any[]>([]);
   const [bulletins, setBulletins] = useState<any[]>([]);
   const [allUsers, setAllUsers] = useState<any[]>([]); 
   const [user, setUser] = useState<any>(null);
-  const [resetRequests, setResetRequests] = useState<any[]>([]); // [新增] 儲存申請列表
+  const [resetRequests, setResetRequests] = useState<any[]>([]); 
   
-  const supabase = getSupabase(); 
-  // 若 supabase 為 null，代表處於預覽模式，我們使用一個 local 的 mock client
-  const client = useMemo(() => supabase || createClient('mock','mock'), [supabase]);
-
   const FAKE_DOMAIN = "@my-notes.com";
 
   const [teamBigOptions, setTeamBigOptions] = useState<any[]>([]);
@@ -203,10 +215,7 @@ export default function RegistrationApp() {
   const [loading, setLoading] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   
-  // [修改] authMode 狀態: 'login', 'signup', 'forgot'
   const [authMode, setAuthMode] = useState<'login' | 'signup' | 'forgot'>('login');
-  
-  // [修改] 新增 'admin_requests' 頁籤
   const [activeTab, setActiveTab] = useState<'form' | 'history' | 'admin_data' | 'admin_users' | 'admin_settings' | 'admin_requests' | 'bulletin'>('bulletin');
   const [filterMonth, setFilterMonth] = useState('');
 
@@ -218,7 +227,7 @@ export default function RegistrationApp() {
   const [newPassword, setNewPassword] = useState('');
   const [pwdTargetUser, setPwdTargetUser] = useState<any>(null);
 
-  const [showApprovalModal, setShowApprovalModal] = useState(false); // [新增] 核准後顯示密碼的視窗
+  const [showApprovalModal, setShowApprovalModal] = useState(false); 
   const [approvedResult, setApprovedResult] = useState<any>(null);
 
   const [addUserName, setAddUserName] = useState('');
@@ -232,21 +241,6 @@ export default function RegistrationApp() {
     action_type: '新增', start_date: '', start_time: '', end_date: '', end_time: '',
     need_help: false, memo: ''
   });
-  
-  // === Utils ===
-  const encodeName = (name: string) => {
-    try { let hex = ''; for (let i = 0; i < name.length; i++) hex += ('0000' + name.charCodeAt(i).toString(16)).slice(-4); return hex; } catch { return name; }
-  };
-  const decodeName = (email: string) => {
-    try { const hex = email.split('@')[0]; let str = ''; for (let i = 0; i < hex.length; i += 4) str += String.fromCharCode(parseInt(hex.substr(i, 4), 16)); return str; } catch { return email?.split('@')[0] || ''; }
-  };
-  const getDisplayNameOnly = (email: string) => {
-    const fullName = decodeName(email); return (fullName.length > 4 && !isNaN(Number(fullName.slice(-4)))) ? fullName.slice(0, -4) : fullName;
-  };
-  const getIdLast4FromEmail = (email: string) => {
-    const fullName = decodeName(email); return (fullName.length > 4 && !isNaN(Number(fullName.slice(-4)))) ? fullName.slice(-4) : '';
-  };
-  const isExpired = (d: string, t: string) => { if(!d) return false; return new Date(`${d}T${t||'23:59:59'}`) < new Date(); };
 
   useEffect(() => {
     const d = new Date(); 
@@ -256,15 +250,15 @@ export default function RegistrationApp() {
 
   // === Actions (Functions) ===
   const handleLogout = useCallback(async () => {
-    await client.auth.signOut();
+    await supabase.auth.signOut();
     setUser(null); setNotes([]); setBulletins([]); setUsername(''); setIdLast4(''); setPassword('');
     setIsAdmin(false); setAuthMode('login'); setActiveTab('bulletin');
-  }, [client]);
+  }, [supabase]);
 
   const checkUserStatus = useCallback(async (email: string) => {
       if (!email) return;
       try {
-          if (!supabase) {
+          if (useMock) {
              if (mockDb && mockDb.user_permissions) {
                const perm = mockDb.user_permissions.find((u:any) => u.email === email);
                if (perm) {
@@ -281,39 +275,38 @@ export default function RegistrationApp() {
               setIsAdmin(data.is_admin === true);
           }
       } catch (e) { console.error(e); }
-  }, [supabase, client, handleLogout]);
+  }, [supabase, handleLogout]);
 
   // 讀取選項
   const fetchOptions = useCallback(async () => {
     try {
-      const { data: bigDataRaw } = await client.from('system_options').select('*').eq('category', 'team_big').order('created_at', { ascending: true });
+      const { data: bigDataRaw } = await supabase.from('system_options').select('*').eq('category', 'team_big').order('created_at', { ascending: true });
       const bigData = bigDataRaw || [];
-      const finalBig = (!supabase && bigData.length === 0 && mockDb?.system_options) ? 
+      const finalBig = (useMock && bigData.length === 0 && mockDb?.system_options) ? 
                        mockDb.system_options.filter((o:any)=>o.category==='team_big') : bigData;
       setTeamBigOptions(finalBig);
       
-      const { data: smallDataRaw } = await client.from('system_options').select('*').eq('category', 'team_small').order('created_at', { ascending: true });
+      const { data: smallDataRaw } = await supabase.from('system_options').select('*').eq('category', 'team_small').order('created_at', { ascending: true });
       const smallData = smallDataRaw || [];
-      const finalSmall = (!supabase && smallData.length === 0 && mockDb?.system_options) ? 
+      const finalSmall = (useMock && smallData.length === 0 && mockDb?.system_options) ? 
                          mockDb.system_options.filter((o:any)=>o.category==='team_small') : smallData;
       setTeamSmallOptions(finalSmall);
 
     } catch (e) { console.error(e); }
-  }, [client, supabase]);
+  }, [supabase]);
 
   const fetchBulletins = useCallback(async () => {
-    if (!client) return;
-    const { data } = await client.from('bulletins').select('*').order('created_at', { ascending: false });
+    const { data } = await supabase.from('bulletins').select('*').order('created_at', { ascending: false });
     if(data) setBulletins(data);
-    else if(!supabase && mockDb?.bulletins) setBulletins(mockDb.bulletins);
+    else if(useMock && mockDb?.bulletins) setBulletins(mockDb.bulletins);
     else setBulletins([]);
-  }, [client, supabase]);
+  }, [supabase]);
 
   const fetchAllUsers = useCallback(async () => {
     let pData: any[] = [];
     let nData: any[] = [];
 
-    if (!supabase) {
+    if (useMock) {
         pData = mockDb.user_permissions || [];
         nData = mockDb.notes || [];
     } else {
@@ -342,16 +335,13 @@ export default function RegistrationApp() {
     }
   }, [supabase]);
 
-  // [新增] 讀取重設申請列表
   const fetchResetRequests = useCallback(async () => {
-    // [修正] 讀取列表時，也嘗試使用 Service Role Key 以繞過 RLS 限制
-    // 這樣即使資料庫沒有設定 SELECT Policy，管理員也能看到資料
-    let targetClient = client;
-    if (supabase) {
+    let targetClient = supabase;
+    if (!useMock) {
         const serviceRoleKey = process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY;
-        if (serviceRoleKey) {
+        if (serviceRoleKey && process.env.NEXT_PUBLIC_SUPABASE_URL && typeof _createSupabaseClient !== 'undefined') {
             // @ts-ignore
-            targetClient = createClient(
+            targetClient = _createSupabaseClient(
                 process.env.NEXT_PUBLIC_SUPABASE_URL!,
                 serviceRoleKey,
                 { auth: { persistSession: false } }
@@ -359,31 +349,25 @@ export default function RegistrationApp() {
         }
     }
 
-    if (!targetClient) return;
-    
-    // 使用 targetClient (可能是 Admin 權限) 查詢
     const { data, error } = await targetClient.from('reset_requests').select('*').order('created_at', { ascending: false });
     
-    if (error) {
-        console.error("讀取申請列表失敗:", error);
-    }
+    if (error) console.error("讀取申請列表失敗:", error);
 
     if (data) {
         setResetRequests(data);
-    } else if (!supabase && mockDb?.reset_requests) {
+    } else if (useMock && mockDb?.reset_requests) {
         setResetRequests(mockDb.reset_requests);
     } else {
         setResetRequests([]);
     }
-  }, [client, supabase]);
+  }, [supabase]);
 
   const fetchNotes = useCallback(async () => {
-      if(!client) return;
-      const { data } = await client.from('notes').select('*').order('start_date', { ascending: true }).order('start_time', { ascending: true });
+      const { data } = await supabase.from('notes').select('*').order('start_date', { ascending: true }).order('start_time', { ascending: true });
       if(data) setNotes(data);
-      else if(!supabase && mockDb?.notes) setNotes(mockDb.notes);
+      else if(useMock && mockDb?.notes) setNotes(mockDb.notes);
       else setNotes([]);
-  }, [client, supabase]);
+  }, [supabase]);
 
   const handleInitializeDefaults = async () => {
       if (!confirm('確定要匯入預設選項嗎？')) return;
@@ -394,7 +378,7 @@ export default function RegistrationApp() {
           ...defaultBig.map(v => ({ category: 'team_big', value: v })),
           ...defaultSmall.map(v => ({ category: 'team_small', value: v }))
       ];
-      const { error } = await client.from('system_options').insert(insertPayload);
+      const { error } = await supabase.from('system_options').insert(insertPayload);
       if (error) alert('匯入失敗：' + error.message);
       else {
           alert('預設選項匯入成功！');
@@ -406,8 +390,8 @@ export default function RegistrationApp() {
   const handleAddOption = async (category: string) => {
       if (!newOptionValue.trim()) return alert('請輸入名稱');
       setLoading(true);
-      if (supabase) {
-          const { error } = await client.from('system_options').insert([{ category, value: newOptionValue.trim() }]);
+      if (!useMock) {
+          const { error } = await supabase.from('system_options').insert([{ category, value: newOptionValue.trim() }]);
           if (error) alert('新增失敗'); else { setNewOptionValue(''); fetchOptions(); }
       } else {
           mockDb.system_options.push({id: Date.now(), category, value: newOptionValue.trim()});
@@ -418,8 +402,8 @@ export default function RegistrationApp() {
 
   const handleDeleteOption = async (id: number) => {
       if(!confirm('刪除?')) return;
-      if (supabase) {
-          const { error } = await client.from('system_options').delete().eq('id', id);
+      if (!useMock) {
+          const { error } = await supabase.from('system_options').delete().eq('id', id);
           if (error) alert('刪除失敗'); else fetchOptions();
       } else {
          mockDb.system_options = mockDb.system_options.filter((o:any)=>o.id!==id); 
@@ -439,8 +423,8 @@ export default function RegistrationApp() {
   };
 
   const handleToggleUserDisabled = async (email: string, status: boolean) => {
-      if(supabase) { 
-        const { error } = await client.from('user_permissions').update({ is_disabled: !status }).eq('email', email);
+      if(!useMock) { 
+        const { error } = await supabase.from('user_permissions').update({ is_disabled: !status }).eq('email', email);
         if(!error) fetchAllUsers();
         else alert('更新失敗: ' + error.message);
       } else {
@@ -461,7 +445,7 @@ export default function RegistrationApp() {
   const handlePostBulletin = async () => {
     if (!bulletinText && !bulletinImage) return alert('請輸入內容');
     setLoading(true);
-    if (supabase) {
+    if (!useMock) {
         const { error } = await supabase.from('bulletins').insert([{ content: bulletinText, image_url: bulletinImage }]);
         if (error) alert('失敗:' + error.message); else { alert('成功'); setBulletinText(''); setBulletinImage(''); fetchBulletins(); }
     } else {
@@ -474,7 +458,7 @@ export default function RegistrationApp() {
 
   const handleDeleteBulletin = async (id: number) => {
     if (!confirm('刪除?')) return;
-    if (supabase) {
+    if (!useMock) {
         const { error } = await supabase.from('bulletins').delete().eq('id', id);
         if (!error) { alert('已刪除'); fetchBulletins(); }
     }
@@ -483,7 +467,7 @@ export default function RegistrationApp() {
   const handleToggleDeleteNote = async (id: number, currentStatus: boolean) => {
     if (!currentStatus && !confirm('確定刪除?')) return;
     setLoading(true);
-    if (supabase) {
+    if (!useMock) {
         const { data, error } = await supabase.from('notes').update({ is_deleted: !currentStatus }).eq('id', id).select();
         const result = data || [];
         if (error || result.length === 0) alert('更新失敗或無權限 (請檢查 RLS)');
@@ -501,47 +485,68 @@ export default function RegistrationApp() {
   // [修改] 密碼修改與重設邏輯
   const handleChangePassword = async () => {
     if (!newPassword || newPassword.length < 6) return alert('至少6碼');
-    if (useMock) return alert('預覽模式無法修改');
     
     setLoading(true);
-    if (pwdTargetUser === 'SELF') {
-      // 1. 修改自己
-      const { error } = await supabase.auth.updateUser({ password: newPassword });
-      if (error) alert(error.message); else alert('成功');
-    } else {
-      // 2. 管理員重設他人
-      // 需要使用 Service Role Key
-      const serviceRoleKey = process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY;
-      
-      if (!serviceRoleKey) {
-          alert('請先在 Vercel 設定 NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY 環境變數，才能啟用強制重設功能。');
-          setLoading(false);
-          return;
-      }
+    try {
+        if (pwdTargetUser === 'SELF') {
+          // 1. 修改自己
+          // [修正] 增加 await 和錯誤處理
+          const { error } = await supabase.auth.updateUser({ password: newPassword });
+          
+          if (error) {
+              throw error;
+          } else {
+              alert('修改成功！');
+              setShowPwdModal(false); // [修正] 修改成功後關閉視窗
+          }
+        } else {
+          // 2. 管理員重設他人
+          // 需要使用 Service Role Key
+          if (useMock) {
+               console.log('[Mock] Admin reset password');
+               alert(`已強制重設 ${pwdTargetUser.display_name} 的密碼！`);
+               setShowPwdModal(false);
+               setLoading(false);
+               return;
+          }
 
-      // 建立一個擁有超級權限的 client
-      // @ts-ignore
-      const adminClient = createClient(
-          process.env.NEXT_PUBLIC_SUPABASE_URL!,
-          serviceRoleKey,
-          { auth: { persistSession: false } }
-      );
+          const serviceRoleKey = process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY;
+          
+          if (!serviceRoleKey) {
+              alert('請先在 Vercel 設定 NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY 環境變數，才能啟用強制重設功能。');
+              setLoading(false);
+              return;
+          }
 
-      const { error } = await adminClient.auth.admin.updateUserById(
-          pwdTargetUser.uid, 
-          { password: newPassword }
-      );
+          // 建立一個擁有超級權限的 client
+          // @ts-ignore
+          const adminClient = _createSupabaseClient(
+              process.env.NEXT_PUBLIC_SUPABASE_URL!,
+              serviceRoleKey,
+              { auth: { persistSession: false } }
+          );
 
-      if (error) alert('重設失敗: ' + error.message);
-      else alert(`已強制重設 ${pwdTargetUser.display_name} 的密碼！`);
+          const { error } = await adminClient.auth.admin.updateUserById(
+              pwdTargetUser.uid, 
+              { password: newPassword }
+          );
+
+          if (error) alert('重設失敗: ' + error.message);
+          else {
+              alert(`已強制重設 ${pwdTargetUser.display_name} 的密碼！`);
+              setShowPwdModal(false); // [修正] 修改成功後關閉視窗
+          }
+        }
+    } catch (e: any) {
+        console.error("Change password error:", e);
+        alert('執行失敗: ' + (e.message || '未知錯誤'));
+    } finally {
+        setLoading(false);
     }
-    setLoading(false);
-    setShowPwdModal(false);
   };
 
   // [新增] 處理密碼重設申請 (使用者端)
   const handleRequestReset = async () => {
-    // [修正] 自動去除前後空白，避免手機輸入產生隱形空白導致找不到人
     const cleanName = username.trim();
     const cleanId = idLast4.trim();
 
@@ -551,44 +556,38 @@ export default function RegistrationApp() {
     try {
       console.log(`[重設申請] 正在搜尋用戶: 姓名=[${cleanName}], ID=[${cleanId}]`);
       
-      // 1. 設定查詢用的 Client (必須是 Super Admin 才能繞過 RLS)
-      let targetClient = client; // 預設使用普通權限 (如果是 Mock 模式)
+      let targetClient = supabase;
       let targetUser = null;
 
-      if (supabase) {
-          // [修正] 必須使用 Service Role Key 來建立 Client，否則會被 RLS 擋住
+      if (!useMock) {
           const serviceRoleKey = process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY;
           
           if (!serviceRoleKey) {
-             alert('【系統設定錯誤】\n請在 Vercel 環境變數設定 NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY。\n否則系統無權限查詢用戶或建立申請單。');
+             alert('【系統設定錯誤】請設定 NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY。');
              setLoading(false);
              return;
           }
 
           // @ts-ignore
-          targetClient = createClient(
+          targetClient = _createSupabaseClient(
               process.env.NEXT_PUBLIC_SUPABASE_URL!,
               serviceRoleKey,
               { auth: { persistSession: false } }
           );
 
-          // 使用超級權限查詢用戶
           const res = await targetClient.from('user_permissions').select('*').eq('user_name', cleanName).eq('id_last4', cleanId).maybeSingle();
           targetUser = res.data;
 
-      } else if (mockDb && mockDb.user_permissions) {
-        console.log('[Mock 模式] 目前模擬資料庫中的用戶:', mockDb.user_permissions);
+      } else if (useMock && mockDb.user_permissions) {
         targetUser = mockDb.user_permissions.find((u:any) => u.user_name === cleanName && u.id_last4 === cleanId);
       }
 
       if (!targetUser) {
-        console.warn('[重設申請] 找不到符合的用戶。請確認 user_permissions 資料表是否有該使用者的 user_name 與 id_last4');
         alert(`找不到此用戶 (${cleanName}, ${cleanId})。\n\n請確認姓名與ID後4碼完全相符 (包含空白)。`);
         setLoading(false);
         return;
       }
 
-      // 2. 建立申請 (使用 targetClient 寫入，解決 "new row violates RLS" 錯誤)
       const newRequest = {
          user_name: cleanName,
          id_last4: cleanId,
@@ -596,8 +595,7 @@ export default function RegistrationApp() {
          status: 'pending',
       };
 
-      if (supabase) {
-         // [關鍵] 這裡使用 targetClient (Admin權限) 進行 Insert，就能無視 RLS
+      if (!useMock) {
          const { error } = await targetClient.from('reset_requests').insert([newRequest]);
          if(error) throw error;
       } else {
@@ -606,14 +604,13 @@ export default function RegistrationApp() {
       }
 
       alert('申請已送出！請通知管理員/主管進行審核。');
-      setAuthMode('login'); // 回到登入頁
+      setAuthMode('login');
       setUsername(''); setIdLast4(''); setPassword('');
 
     } catch (e: any) {
       console.error(e);
-      // 詳細錯誤處理
       if (e.message?.includes('violates row-level security')) {
-          alert('【權限錯誤】\n即使使用了 Admin Key 仍然被拒絕，請檢查環境變數是否正確載入。\n或者請至 Supabase 設定 "reset_requests" 資料表的 Insert Policy。');
+          alert('【權限錯誤】請檢查環境變數是否正確載入。');
       } else {
           alert('申請失敗: ' + e.message);
       }
@@ -621,16 +618,13 @@ export default function RegistrationApp() {
     setLoading(false);
   };
 
-  // [新增] 處理審核批准 (管理員端)
   const handleApproveReset = async (request: any) => {
     if (!confirm(`確定要批准 ${request.user_name} 的重設申請嗎？\n系統將生成一組隨機密碼。`)) return;
     
-    // 產生 6 位數隨機密碼
     const tempPassword = Math.floor(100000 + Math.random() * 900000).toString();
     setLoading(true);
 
     try {
-        // 1. 修改密碼 (Mock / Real)
         if (useMock) {
            console.log(`[模擬] 用戶 ${request.uid} 密碼已改為 ${tempPassword}`);
         } else {
@@ -641,22 +635,20 @@ export default function RegistrationApp() {
              return;
            }
            // @ts-ignore
-           const adminClient = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceRoleKey, { auth: { persistSession: false } });
+           const adminClient = _createSupabaseClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceRoleKey, { auth: { persistSession: false } });
            const { error } = await adminClient.auth.admin.updateUserById(request.uid, { password: tempPassword });
            if(error) throw error;
         }
 
-        // 2. 更新申請狀態
-        if (supabase) {
-           await client.from('reset_requests').update({ status: 'completed' }).eq('id', request.id);
+        if (!useMock) {
+           await supabase.from('reset_requests').update({ status: 'completed' }).eq('id', request.id);
         } else {
            mockDb.reset_requests = mockDb.reset_requests.map((r:any) => r.id === request.id ? { ...r, status: 'completed' } : r);
         }
 
-        // 3. 顯示結果
         setApprovedResult({ name: request.user_name, pwd: tempPassword });
         setShowApprovalModal(true);
-        fetchResetRequests(); // 重新整理列表
+        fetchResetRequests(); 
 
     } catch(e: any) {
         alert('重設失敗: ' + e.message);
@@ -664,11 +656,10 @@ export default function RegistrationApp() {
     setLoading(false);
   };
 
-  // [新增] 駁回申請
   const handleRejectReset = async (id: number) => {
       if(!confirm('確定駁回?')) return;
-      if (supabase) {
-          await client.from('reset_requests').update({ status: 'rejected' }).eq('id', id);
+      if (!useMock) {
+          await supabase.from('reset_requests').update({ status: 'rejected' }).eq('id', id);
       } else {
           mockDb.reset_requests = mockDb.reset_requests.map((r:any) => r.id === id ? { ...r, status: 'rejected' } : r);
       }
@@ -681,17 +672,16 @@ export default function RegistrationApp() {
      
      setLoading(true);
 
-     if (supabase && process.env.NEXT_PUBLIC_SUPABASE_URL) {
+     if (!useMock && process.env.NEXT_PUBLIC_SUPABASE_URL) {
          try {
-             // @ts-ignore
-             if (typeof createSupabaseClient !== 'function' || createSupabaseClient.toString().includes('return {}')) {
-                alert('請在程式碼上方解除 createSupabaseClient 的註解並部署，才能使用此功能。');
+             if (typeof _createSupabaseClient !== 'function') {
+                alert('請在程式碼上方解除 _createSupabaseClient 的註解並部署，才能使用此功能。');
                 setLoading(false);
                 return;
              }
 
              // @ts-ignore
-             const tempClient = createSupabaseClient(
+             const tempClient = _createSupabaseClient(
                  process.env.NEXT_PUBLIC_SUPABASE_URL,
                  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
                  { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } }
@@ -717,7 +707,7 @@ export default function RegistrationApp() {
          }
      } else {
          alert(`[模擬] 使用者 ${addUserName} 已建立`);
-         if(mockDb) {
+         if(useMock && mockDb) {
            if(!mockDb.user_permissions) mockDb.user_permissions = [];
            mockDb.user_permissions.push({
                id: Date.now(), email, is_admin: false, is_disabled: false, 
@@ -733,11 +723,11 @@ export default function RegistrationApp() {
     if(!user) return;
     if(formData.start_date < minStartDate) return alert('日期錯誤');
     const signName = `${getDisplayNameOnly(user.email||'')} (${getIdLast4FromEmail(user.email||'')})`;
-    if(supabase) {
-        const { error } = await client.from('notes').insert([{...formData, user_id: user.id, id_2: getIdLast4FromEmail(user.email||''), sign_name: signName }]);
+    if(!useMock) {
+        const { error } = await supabase.from('notes').insert([{...formData, user_id: user.id, id_2: getIdLast4FromEmail(user.email||''), sign_name: signName }]);
         if(!error) { alert('成功'); window.location.reload(); }
         else alert('失敗');
-    } else if (mockDb) {
+    } else if (useMock && mockDb) {
         if(!mockDb.notes) mockDb.notes = [];
         mockDb.notes.push({...formData, id: Date.now(), user_id: user.id, id_2: getIdLast4FromEmail(user.email||''), sign_name: signName, created_at: new Date().toISOString() });
         alert('[模擬] 報名成功');
@@ -777,18 +767,16 @@ export default function RegistrationApp() {
       }
   };
 
-  // Effects
   useEffect(() => { 
       if (isAdmin) {
           if (activeTab === 'admin_users') fetchAllUsers();
           if (activeTab === 'admin_settings') fetchOptions();
-          if (activeTab === 'admin_requests') fetchResetRequests(); // [新增]
+          if (activeTab === 'admin_requests') fetchResetRequests(); 
       }
   }, [activeTab, isAdmin, fetchAllUsers, fetchOptions, fetchResetRequests]);
 
   useEffect(() => {
     const init = async () => {
-        if (!supabase) return;
         const { data: { user } } = await supabase.auth.getUser();
         setUser(user);
         if(user) {
@@ -801,7 +789,7 @@ export default function RegistrationApp() {
         }
     };
     init();
-  }, [fetchNotes, fetchBulletins, fetchOptions, checkUserStatus, supabase]);
+  }, [supabase, fetchNotes, fetchBulletins, fetchOptions, checkUserStatus]);
 
   // UI
   const openPwdModal = (target: any) => {
@@ -810,7 +798,7 @@ export default function RegistrationApp() {
     setShowPwdModal(true);
   };
 
-  if (!supabase && !useMock) {
+  if (!useMock && (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)) {
       return <div className="p-10 text-center text-red-500 font-bold">⚠️ 系統未連接資料庫。請在 Vercel 設定環境變數。</div>;
   }
 
@@ -828,7 +816,6 @@ export default function RegistrationApp() {
             <input className="w-full p-3 border rounded" placeholder="姓名" value={username} onChange={e=>setUsername(e.target.value)} />
             <input className="w-full p-3 border rounded" placeholder="ID後四碼" maxLength={4} value={idLast4} onChange={e=>setIdLast4(e.target.value)} />
             
-            {/* 只有登入和註冊需要密碼 */}
             {authMode !== 'forgot' && (
               <input className="w-full p-3 border rounded" type="password" placeholder="密碼" value={password} onChange={e=>setPassword(e.target.value)} />
             )}
@@ -880,7 +867,6 @@ export default function RegistrationApp() {
              {isAdmin && ['admin_data','admin_users','admin_requests','admin_settings'].map(t => (
                  <button key={t} onClick={()=>setActiveTab(t as any)} className={`flex-1 py-3 px-2 rounded-md ${activeTab===t?'bg-white shadow-sm text-blue-800 font-bold':'text-blue-600'}`}>
                     {t==='admin_data'?'資料':t==='admin_users'?'用戶':t==='admin_requests'?'審核':'設定'}
-                    {/* 紅點提示: 如果有 pending 的申請 (簡易模擬) */}
                     {t==='admin_requests' && resetRequests.some(r=>r.status==='pending') && <span className="ml-1 text-xs text-red-500">●</span>}
                  </button>
              ))}
@@ -1080,8 +1066,12 @@ export default function RegistrationApp() {
 
                    <div className="flex justify-end gap-2">
                        <button onClick={() => setShowPwdModal(false)} className="px-4 py-2 bg-gray-200 rounded">取消</button>
-                       <button onClick={handleChangePassword} className="px-4 py-2 bg-blue-600 text-white rounded">
-                           確認修改
+                       <button 
+                           onClick={handleChangePassword} 
+                           disabled={loading}
+                           className={`px-4 py-2 bg-blue-600 text-white rounded flex items-center ${loading ? 'opacity-50 cursor-not-allowed' : 'hover:bg-blue-700'}`}
+                       >
+                           {loading ? '處理中...' : '確認修改'}
                        </button>
                    </div>
                 </div>
