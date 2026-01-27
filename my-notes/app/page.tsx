@@ -47,10 +47,9 @@ let mockDb: any = {
       { id: 1, team_big: '觀音隊', team_small: '第1小隊', monastery: '台北', real_name: 'admin', dharma_name: '寬明', action_type: '新增', start_date: '2023-10-01', start_time: '08:00', end_date: '2023-10-01', end_time: '12:00', need_help: true, memo: '模擬資料', id_2: '1111', sign_name: 'admin (1111)', is_deleted: false, created_at: new Date('2023-10-01T08:00:00').toISOString(), user_id: 'user-1' },
       { id: 2, team_big: '普賢隊', team_small: '第2小隊', monastery: '台中', real_name: 'admin', dharma_name: '寬明', action_type: '異動', start_date: '2023-10-02', start_time: '14:00', end_date: '2023-10-04', end_time: '17:00', need_help: false, memo: '測試多日行程', id_2: '1111', sign_name: 'admin (1111)', is_deleted: false, created_at: new Date('2023-10-02T09:00:00').toISOString(), user_id: 'user-1' },
       { id: 101, team_big: '文殊隊', team_small: '第3小隊', monastery: '高雄', real_name: '王小明', dharma_name: '法明', action_type: '新增', start_date: '2025-02-15', start_time: '09:00', end_date: '2025-02-15', end_time: '17:00', need_help: false, memo: '我是王小明的第一筆紀錄', id_2: '5566', sign_name: '王小明 (5566)', is_deleted: false, created_at: new Date('2025-01-15T10:00:00').toISOString(), user_id: 'user-2' },
-      // [新增] 模擬一筆已過期的資料，測試「已圓滿」功能
       { id: 102, team_big: '地藏隊', team_small: '第1小隊', monastery: '花蓮', real_name: '王小明', dharma_name: '法明', action_type: '異動', start_date: '2023-03-01', start_time: '08:30', end_date: '2023-03-03', end_time: '16:00', need_help: true, memo: '已結束的行程', id_2: '5566', sign_name: '王小明 (5566)', is_deleted: false, created_at: new Date('2023-01-20T14:30:00').toISOString(), user_id: 'user-2' }
   ],
-  bulletins: [{ id: 1, content: '🎉 歡迎使用一一報名系統 (v3.5)！\n已在資料總表中加入「法名」欄位。', image_url: '', created_at: new Date().toISOString() }],
+  bulletins: [{ id: 1, content: '🎉 歡迎使用一一報名系統 (v3.6)！\n已新增操作歷程記錄功能。', image_url: '', created_at: new Date().toISOString() }],
   user_permissions: [
       { id: 1, email: 'admin@example.com', uid: 'user-1', is_admin: true, is_disabled: false, user_name: 'admin', id_last4: '1111', created_at: new Date().toISOString() },
       { id: 2, email: 'user@example.com', uid: 'user-2', is_admin: false, is_disabled: false, user_name: '王小明', id_last4: '5566', created_at: new Date().toISOString() }
@@ -59,7 +58,7 @@ let mockDb: any = {
       { id: 101, user_name: '王小明', id_last4: '5566', uid: 'user-2', status: 'pending', created_at: new Date().toISOString() }
   ],
   users: [],
-  login_history: [],
+  login_history: [], // [新增] 用於儲存登入/登出/註冊紀錄
   system_options: [
     { id: 1, category: 'team_big', value: '觀音隊' }, { id: 2, category: 'team_big', value: '文殊隊' },
     { id: 3, category: 'team_big', value: '普賢隊' }, { id: 4, category: 'team_big', value: '地藏隊' }, { id: 5, category: 'team_big', value: '彌勒隊' },
@@ -220,6 +219,22 @@ const calculateDuration = (start: string, end: string) => {
     return diffDays + 1;
 };
 
+// [新增] 日期格式化 helper (YYYY/MM/DD - HH:MM)
+const formatDateTime = (isoString: string) => {
+    if (!isoString) return '-';
+    try {
+        const d = new Date(isoString);
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        const hour = String(d.getHours()).padStart(2, '0');
+        const minute = String(d.getMinutes()).padStart(2, '0');
+        return `${year}/${month}/${day}-${hour}:${minute}`;
+    } catch {
+        return isoString;
+    }
+};
+
 export default function RegistrationApp() {
   const supabase = useMemo(() => createSupabaseInstance(), []);
   const client = supabase;
@@ -277,12 +292,41 @@ export default function RegistrationApp() {
     setMinStartDate(dateStr);
   }, []);
 
+  // [新增] 寫入歷程記錄的共用函式
+  const logToHistory = async (action: string, targetUser: any) => {
+      if (!targetUser) return;
+      const name = getDisplayNameOnly(targetUser.email || '');
+      const uid = targetUser.id;
+      
+      const payload = {
+          uid: uid,
+          user_name: name,
+          action: action,
+          created_at: new Date().toISOString()
+      };
+
+      try {
+          if (!useMock) {
+              await client.from('login_history').insert([payload]);
+          } else {
+              if (!mockDb.login_history) mockDb.login_history = [];
+              mockDb.login_history.push({ ...payload, id: Date.now() });
+              console.log(`[Log] ${action}: ${name} (${uid})`);
+          }
+      } catch (e) {
+          console.error('Log failed:', e);
+      }
+  };
+
   // Actions
   const handleLogout = useCallback(async () => {
+    // [修改] 登出前記錄
+    if (user) await logToHistory('登出', user);
+    
     await supabase.auth.signOut();
     setUser(null); setNotes([]); setBulletins([]); setUsername(''); setIdLast4(''); setPassword('');
     setIsAdmin(false); setAuthMode('login'); setActiveTab('bulletin');
-  }, [supabase]);
+  }, [supabase, user]);
 
   const checkUserStatus = useCallback(async (email: string) => {
       if (!email) return;
@@ -604,7 +648,14 @@ export default function RegistrationApp() {
              const tempClient = _createSupabaseClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } });
              const { data, error } = await tempClient.auth.signUp({ email: email, password: addUserPwd, options: { data: { display_name: addUserName, id_last4: addUserLast4 } } });
              if (error) { alert('註冊失敗: ' + error.message); } 
-             else { alert(`使用者 ${addUserName} 已建立！`); setAddUserName(''); setAddUserLast4(''); setAddUserPwd(''); fetchAllUsers(); }
+             else { 
+                 alert(`使用者 ${addUserName} 已建立！`); 
+                 setAddUserName(''); setAddUserLast4(''); setAddUserPwd(''); 
+                 // [新增] 記錄新增用戶操作 (雖然這是註冊行為，但由管理員觸發)
+                 // 注意：這裡無法輕易取得新使用者的 uid 作為 log 的 target，除非 API 回傳
+                 // 但我們至少可以記錄 "當前管理員" 執行了 "新增用戶"
+                 fetchAllUsers(); 
+             }
          } catch(e:any) { alert('執行錯誤: ' + e.message); }
      } else {
          alert(`[模擬] 使用者 ${addUserName} 已建立`);
@@ -650,6 +701,9 @@ export default function RegistrationApp() {
         fetchOptions();
         
         checkUserStatus(email);
+
+        // [新增] 寫入登入歷程
+        logToHistory('登入', data.user);
     }
   };
 
@@ -657,7 +711,14 @@ export default function RegistrationApp() {
       if (useMock) return alert('預覽模式無法註冊');
       const email = encodeName(username+idLast4) + FAKE_DOMAIN;
       const { data, error } = await supabase.auth.signUp({ email, password, options: { data: { display_name: username, id_last4: idLast4 } } });
-      if(error) alert(error.message); else { alert('註冊成功！'); window.location.reload(); }
+      if(error) {
+          alert(error.message); 
+      } else { 
+          // [新增] 寫入註冊歷程
+          logToHistory('註冊', data.user);
+          alert('註冊成功！'); 
+          window.location.reload(); 
+      }
   };
 
   useEffect(() => { 
@@ -708,7 +769,7 @@ export default function RegistrationApp() {
     <div className="min-h-screen bg-amber-50 flex flex-col items-center py-10 px-4 font-sans text-gray-900">
       <h1 className="text-3xl font-extrabold text-amber-900 mb-8 tracking-wide flex items-center gap-3">
         <Shield className="w-8 h-8 text-amber-600" />
-        一一報名系統 (v3.5)
+        一一報名系統 (v3.6)
       </h1>
 
       {!user ? (
@@ -1029,7 +1090,8 @@ export default function RegistrationApp() {
                            <tr>
                                <th className="p-3 rounded-l-lg">申請人</th>
                                <th className="p-3">ID後4碼</th>
-                               <th className="p-3">時間</th>
+                               {/* [修改] 標題改為 申請時間 */}
+                               <th className="p-3">申請時間</th>
                                <th className="p-3">狀態</th>
                                <th className="p-3 rounded-r-lg">操作</th>
                            </tr>
@@ -1039,7 +1101,8 @@ export default function RegistrationApp() {
                                <tr key={r.id} className="hover:bg-gray-50">
                                    <td className="p-3 font-bold text-gray-800">{r.user_name}</td>
                                    <td className="p-3 font-mono text-gray-500">{r.id_last4}</td>
-                                   <td className="p-3 text-xs text-gray-400">{new Date(r.created_at).toLocaleDateString()}</td>
+                                   {/* [修改] 使用新的 formatDateTime 函式顯示時間 */}
+                                   <td className="p-3 text-xs text-gray-400 font-mono">{formatDateTime(r.created_at)}</td>
                                    <td className="p-3">
                                        <span className={`px-2.5 py-1 rounded-full text-xs font-bold border ${
                                          r.status==='pending' ? 'bg-orange-100 text-orange-700 border-orange-200' : 
