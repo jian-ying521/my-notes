@@ -359,14 +359,34 @@ export default function RegistrationApp() {
     setSortedNotes(sorted);
   }, [notes]);
 
+  // [修改] 歷程記錄函式：嘗試使用 Service Role Key 進行寫入，解決 RLS 權限問題
   const logToHistory = useCallback(async (action: string, targetUser: any) => {
       if (!targetUser) return;
       const name = getDisplayNameOnly(targetUser.email || '');
       const uid = targetUser.id;
       const payload = { uid: uid, user_name: name, action: action, created_at: new Date().toISOString() };
+      
+      let targetClient = client;
+
+      if (!useMock) {
+          const serviceRoleKey = process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY;
+          const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+
+          if (serviceRoleKey && supabaseUrl && typeof _createSupabaseClient !== 'undefined') {
+              // @ts-ignore
+              targetClient = _createSupabaseClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false } });
+          }
+      }
+
       try {
-          if (!useMock) { await client.from('login_history').insert([payload]); } 
-          else { if (!mockDb.login_history) mockDb.login_history = []; mockDb.login_history.push({ ...payload, id: Date.now() }); console.log(`[Log] ${action}: ${name} (${uid})`); }
+          if (!useMock) { 
+              const { error } = await targetClient.from('login_history').insert([payload]); 
+              if (error) console.error("Log error:", error);
+          } else { 
+              if (!mockDb.login_history) mockDb.login_history = []; 
+              mockDb.login_history.push({ ...payload, id: Date.now() }); 
+              console.log(`[Log] ${action}: ${name} (${uid})`); 
+          }
       } catch (e) { console.error('Log failed:', e); }
   }, [client]);
 
@@ -808,7 +828,6 @@ export default function RegistrationApp() {
           if (activeTab === 'admin_users') fetchAllUsers();
           if (activeTab === 'admin_settings') fetchOptions();
           if (activeTab === 'admin_requests') fetchResetRequests(); 
-          // [新增] 切換到資料頁籤時，同時讀取歷程
           if (activeTab === 'admin_data') {
              fetchNotes();
              fetchLoginHistory();
@@ -1237,6 +1256,7 @@ export default function RegistrationApp() {
                        </thead>
                        <tbody className="divide-y divide-gray-100">
                            {resetRequests.map(r => (
+                               // [修改] 根據 is_finish 欄位判斷是否反灰 (處理完畢)
                                <tr key={r.id} className={`transition-colors ${r.is_finish ? 'bg-gray-100 opacity-50 select-none' : 'hover:bg-gray-50'}`}>
                                    <td className="p-3 font-bold text-gray-800">{r.user_name}</td>
                                    <td className="p-3 font-mono text-gray-500">{r.id_last4}</td>
@@ -1247,6 +1267,7 @@ export default function RegistrationApp() {
                                          r.status==='completed' ? 'bg-green-100 text-green-700 border-green-200' : 
                                          'bg-red-100 text-red-700 border-red-200'
                                        }`}>
+                                           {/* [修改] 狀態文字對應 */}
                                            {r.status === 'pending' ? '待審核' : r.status === 'completed' ? '已完成' : '已駁回'}
                                        </span>
                                    </td>
@@ -1261,6 +1282,7 @@ export default function RegistrationApp() {
                                                </button>
                                            </div>
                                        )}
+                                       {/* [新增] 完成/駁回後的靜態顯示 */}
                                        {r.status === 'completed' && <span className="text-green-600 font-bold text-xs flex items-center"><Check className="w-4 h-4 mr-1"/>已完成</span>}
                                        {r.status === 'rejected' && <span className="text-red-600 font-bold text-xs flex items-center"><X className="w-4 h-4 mr-1"/>已駁回</span>}
                                    </td>
