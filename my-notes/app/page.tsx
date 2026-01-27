@@ -7,7 +7,8 @@ import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 // 1. 請確保有安裝: npm install @supabase/supabase-js
 // 2. 解除下方 import 的註解。
 // 3. 刪除下方 [預覽用替代定義] 的區塊。
-// 4. [關鍵] 為了讓管理員能強制重設密碼，請在 Vercel 環境變數新增：
+// 4. [關鍵] 為了讓管理員能強制重設密碼，以及讓「忘記密碼」功能正常運作，
+//    請在 Vercel 環境變數新增：
 //    - NEXT_PUBLIC_SUPABASE_URL
 //    - NEXT_PUBLIC_SUPABASE_ANON_KEY
 //    - NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY (從 Supabase 後台 > Settings > API 取得)
@@ -524,55 +525,54 @@ export default function RegistrationApp() {
     try {
       console.log(`[重設申請] 正在搜尋用戶: 姓名=[${cleanName}], ID=[${cleanId}]`);
       
-      // 1. 先確認該用戶是否存在 (Mock 或 Supabase)
+      // 1. 設定查詢用的 Client (必須是 Super Admin 才能繞過 RLS)
+      let targetClient = client; // 預設使用普通權限 (如果是 Mock 模式)
       let targetUser = null;
+
       if (supabase) {
-        // [修正] 優先嘗試使用 Service Role Key 查詢，以繞過 RLS (因為未登入時通常無法讀取 user_permissions)
-        const serviceRoleKey = process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY;
-        let data = null;
+          // [修正] 必須使用 Service Role Key 來建立 Client，否則會被 RLS 擋住
+          const serviceRoleKey = process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY;
+          
+          if (!serviceRoleKey) {
+             alert('【系統設定錯誤】\n請在 Vercel 環境變數設定 NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY。\n否則系統無權限查詢用戶或建立申請單。');
+             setLoading(false);
+             return;
+          }
 
-        if (serviceRoleKey) {
-            // @ts-ignore
-            const adminClient = createClient(
-                process.env.NEXT_PUBLIC_SUPABASE_URL!,
-                serviceRoleKey,
-                { auth: { persistSession: false } }
-            );
-            const res = await adminClient.from('user_permissions').select('*').eq('user_name', cleanName).eq('id_last4', cleanId).maybeSingle();
-            data = res.data;
-        } 
+          // @ts-ignore
+          targetClient = createClient(
+              process.env.NEXT_PUBLIC_SUPABASE_URL!,
+              serviceRoleKey,
+              { auth: { persistSession: false } }
+          );
 
-        // 如果沒有 Service Key 或查詢失敗，退回使用普通 Client 試試 (但通常會被 RLS 擋住)
-        if (!data) {
-             const res = await client.from('user_permissions').select('*').eq('user_name', cleanName).eq('id_last4', cleanId).maybeSingle();
-             data = res.data;
-        }
-        
-        targetUser = data;
+          // 使用超級權限查詢用戶
+          const res = await targetClient.from('user_permissions').select('*').eq('user_name', cleanName).eq('id_last4', cleanId).maybeSingle();
+          targetUser = res.data;
+
       } else if (mockDb && mockDb.user_permissions) {
         console.log('[Mock 模式] 目前模擬資料庫中的用戶:', mockDb.user_permissions);
-        // [修正] 使用 trim 後的變數進行比對
         targetUser = mockDb.user_permissions.find((u:any) => u.user_name === cleanName && u.id_last4 === cleanId);
       }
 
       if (!targetUser) {
-        // 為了安全，也可以選擇不提示 "找不到用戶"，但內部系統方便為主
         console.warn('[重設申請] 找不到符合的用戶。請確認 user_permissions 資料表是否有該使用者的 user_name 與 id_last4');
-        alert(`找不到此用戶 (${cleanName}, ${cleanId})。\n\n【排解方式】\n1. 請確認姓名與ID完全相符。\n2. (重要) 請檢查 Vercel 環境變數是否已設定 NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY，否則系統無權限查詢用戶。`);
+        alert(`找不到此用戶 (${cleanName}, ${cleanId})。\n\n請確認姓名與ID後4碼完全相符 (包含空白)。`);
         setLoading(false);
         return;
       }
 
-      // 2. 建立申請
+      // 2. 建立申請 (使用 targetClient 寫入，解決 "new row violates RLS" 錯誤)
       const newRequest = {
-         user_name: cleanName, // 使用去除空白後的名稱
+         user_name: cleanName,
          id_last4: cleanId,
          uid: targetUser.uid,
          status: 'pending',
       };
 
       if (supabase) {
-         const { error } = await client.from('reset_requests').insert([newRequest]);
+         // [關鍵] 這裡使用 targetClient (Admin權限) 進行 Insert，就能無視 RLS
+         const { error } = await targetClient.from('reset_requests').insert([newRequest]);
          if(error) throw error;
       } else {
          if(!mockDb.reset_requests) mockDb.reset_requests = [];
@@ -585,7 +585,12 @@ export default function RegistrationApp() {
 
     } catch (e: any) {
       console.error(e);
-      alert('申請失敗: ' + e.message);
+      // 詳細錯誤處理
+      if (e.message?.includes('violates row-level security')) {
+          alert('【權限錯誤】\n即使使用了 Admin Key 仍然被拒絕，請檢查環境變數是否正確載入。\n或者請至 Supabase 設定 "reset_requests" 資料表的 Insert Policy。');
+      } else {
+          alert('申請失敗: ' + e.message);
+      }
     }
     setLoading(false);
   };
