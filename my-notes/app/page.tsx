@@ -36,7 +36,6 @@ import {
 // [步驟 1] 部署到 Vercel 時，請解除下方這一行的註解
 // import { createClient as _createSupabaseClient } from '@supabase/supabase-js';
 import { createClient as _createSupabaseClient } from '@supabase/supabase-js';
-
 // --- 設定控制開關 ---
 // [步驟 2] 部署時，請將 true 改為 false
 const useMock = false; 
@@ -56,7 +55,8 @@ let mockDb: any = {
       { id: 2, email: 'user@example.com', uid: 'user-2', is_admin: false, is_disabled: false, user_name: '王小明', id_last4: '5566', created_at: new Date().toISOString() }
   ],
   reset_requests: [
-      { id: 101, user_name: '王小明', id_last4: '5566', uid: 'user-2', status: 'pending', created_at: new Date().toISOString() }
+      // [修改] 增加 is_finish 欄位預設值
+      { id: 101, user_name: '王小明', id_last4: '5566', uid: 'user-2', status: 'pending', is_finish: false, created_at: new Date().toISOString() }
   ],
   users: [],
   login_history: [], 
@@ -311,7 +311,6 @@ export default function RegistrationApp() {
     need_help: false, memo: ''
   });
 
-  // [新增] 使用 useRef 追蹤 user 狀態，避免 useEffect 無限迴圈
   const userRef = useRef(user);
   useEffect(() => { userRef.current = user; }, [user]);
 
@@ -359,7 +358,6 @@ export default function RegistrationApp() {
       } catch (e) { console.error('Log failed:', e); }
   }, [client]);
 
-  // [修正] 使用 userRef 來解決依賴循環問題
   const handleLogout = useCallback(async () => {
     if (userRef.current) await logToHistory('登出', userRef.current);
     await supabase.auth.signOut();
@@ -611,7 +609,7 @@ export default function RegistrationApp() {
         alert(`找不到此用戶 (${cleanName}, ${cleanId})。\n\n請確認姓名與ID後4碼完全相符 (包含空白)。`);
         setLoading(false); return;
       }
-      const newRequest = { user_name: cleanName, id_last4: cleanId, uid: targetUser.uid, status: 'pending' };
+      const newRequest = { user_name: cleanName, id_last4: cleanId, uid: targetUser.uid, status: 'pending', is_finish: false };
       if (!useMock) {
          const { error } = await targetClient.from('reset_requests').insert([newRequest]);
          if(error) throw error;
@@ -628,6 +626,7 @@ export default function RegistrationApp() {
     setLoading(false);
   };
 
+  // [修改] 批准邏輯：更新狀態為 'completed' 並勾選 is_finish，最後反灰
   const handleApproveReset = async (request: any) => {
     if (!confirm(`確定要批准 ${request.user_name} 的重設申請嗎？\n系統將生成一組隨機密碼。`)) return;
     const tempPassword = Math.floor(100000 + Math.random() * 900000).toString();
@@ -644,12 +643,21 @@ export default function RegistrationApp() {
            if(error) throw error;
         }
 
-        // [修改] 先更新本地狀態以即時反映在 UI (變成已完成且反灰)
-        if (!useMock) { await supabase.from('reset_requests').update({ status: 'completed' }).eq('id', request.id); } 
-        else { mockDb.reset_requests = mockDb.reset_requests.map((r:any) => r.id === request.id ? { ...r, status: 'completed' } : r); }
+        // 更新狀態：status -> completed, is_finish -> true
+        if (!useMock) { 
+            await supabase.from('reset_requests')
+                .update({ status: 'completed', is_finish: true })
+                .eq('id', request.id); 
+        } else { 
+            mockDb.reset_requests = mockDb.reset_requests.map((r:any) => 
+                r.id === request.id ? { ...r, status: 'completed', is_finish: true } : r
+            ); 
+        }
         
-        // Optimistic update for UI
-        setResetRequests(prev => prev.map(r => r.id === request.id ? { ...r, status: 'completed' } : r));
+        // Optimistic UI update
+        setResetRequests(prev => prev.map(r => 
+            r.id === request.id ? { ...r, status: 'completed', is_finish: true } : r
+        ));
 
         setApprovedResult({ name: request.user_name, pwd: tempPassword });
         setShowApprovalModal(true); 
@@ -657,13 +665,23 @@ export default function RegistrationApp() {
     setLoading(false);
   };
 
+  // [修改] 駁回邏輯：更新狀態為 'rejected' 並勾選 is_finish，最後反灰
   const handleRejectReset = async (id: number) => {
       if(!confirm('確定駁回?')) return;
-      if (!useMock) { await supabase.from('reset_requests').update({ status: 'rejected' }).eq('id', id); } 
-      else { mockDb.reset_requests = mockDb.reset_requests.map((r:any) => r.id === id ? { ...r, status: 'rejected' } : r); }
+      if (!useMock) { 
+          await supabase.from('reset_requests')
+            .update({ status: 'rejected', is_finish: true })
+            .eq('id', id); 
+      } else { 
+          mockDb.reset_requests = mockDb.reset_requests.map((r:any) => 
+            r.id === id ? { ...r, status: 'rejected', is_finish: true } : r
+          ); 
+      }
       
       // Optimistic update
-      setResetRequests(prev => prev.map(r => r.id === id ? { ...r, status: 'rejected' } : r));
+      setResetRequests(prev => prev.map(r => 
+        r.id === id ? { ...r, status: 'rejected', is_finish: true } : r
+      ));
   };
 
   const handleAdminAddUser = async () => {
@@ -742,7 +760,6 @@ export default function RegistrationApp() {
       }
   }, [activeTab, isAdmin, fetchAllUsers, fetchOptions, fetchResetRequests]);
 
-  // [修正] 確保初始化時執行一次，並且解決依賴問題
   useEffect(() => {
     const init = async () => {
         const { data: { user } } = await supabase.auth.getUser();
@@ -1127,8 +1144,8 @@ export default function RegistrationApp() {
                        </thead>
                        <tbody className="divide-y divide-gray-100">
                            {resetRequests.map(r => (
-                               // [修改] 狀態不為 pending 時，整行反灰且透明度降低，模擬 disabled 狀態
-                               <tr key={r.id} className={`transition-colors ${r.status !== 'pending' ? 'bg-gray-100 opacity-50 select-none' : 'hover:bg-gray-50'}`}>
+                               // [修改] 狀態不為 'pending' 時 (即 is_finish 為 true)，整行反灰且透明度降低，模擬 disabled 狀態
+                               <tr key={r.id} className={`transition-colors ${r.is_finish ? 'bg-gray-100 opacity-50 select-none' : 'hover:bg-gray-50'}`}>
                                    <td className="p-3 font-bold text-gray-800">{r.user_name}</td>
                                    <td className="p-3 font-mono text-gray-500">{r.id_last4}</td>
                                    <td className="p-3 text-xs text-gray-400 font-mono">{formatDateTime(r.created_at)}</td>
@@ -1138,12 +1155,13 @@ export default function RegistrationApp() {
                                          r.status==='completed' ? 'bg-green-100 text-green-700 border-green-200' : 
                                          'bg-red-100 text-red-700 border-red-200'
                                        }`}>
-                                           {/* [修改] 狀態文字顯示邏輯修正，將'已審核'改為'已完成' */}
+                                           {/* [修改] 狀態文字修正 */}
                                            {r.status === 'pending' ? '待審核' : r.status === 'completed' ? '已完成' : '已駁回'}
                                        </span>
                                    </td>
                                    <td className="p-3">
-                                       {r.status === 'pending' && (
+                                       {/* [修改] 根據 is_finish 決定是否顯示按鈕 */}
+                                       {!r.is_finish && (
                                            <div className="flex gap-2">
                                                <button onClick={() => handleApproveReset(r)} className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-xs hover:bg-blue-700 flex items-center gap-1 shadow-sm font-bold">
                                                  <Check className="w-3 h-3" /> 批准
