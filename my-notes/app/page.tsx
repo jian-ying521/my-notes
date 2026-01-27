@@ -36,6 +36,7 @@ import {
 // [步驟 1] 部署到 Vercel 時，請解除下方這一行的註解
 // import { createClient as _createSupabaseClient } from '@supabase/supabase-js';
 import { createClient as _createSupabaseClient } from '@supabase/supabase-js';
+
 // --- 設定控制開關 ---
 // [步驟 2] 部署時，請將 true 改為 false
 const useMock = false; 
@@ -55,7 +56,6 @@ let mockDb: any = {
       { id: 2, email: 'user@example.com', uid: 'user-2', is_admin: false, is_disabled: false, user_name: '王小明', id_last4: '5566', created_at: new Date().toISOString() }
   ],
   reset_requests: [
-      // [修改] 增加 is_finish 欄位預設值
       { id: 101, user_name: '王小明', id_last4: '5566', uid: 'user-2', status: 'pending', is_finish: false, created_at: new Date().toISOString() }
   ],
   users: [],
@@ -632,6 +632,8 @@ export default function RegistrationApp() {
     const tempPassword = Math.floor(100000 + Math.random() * 900000).toString();
     setLoading(true);
     try {
+        let currentClient = supabase;
+        
         if (useMock) {
            console.log(`[模擬] 用戶 ${request.uid} 密碼已改為 ${tempPassword}`);
         } else {
@@ -639,15 +641,21 @@ export default function RegistrationApp() {
            if (!serviceRoleKey) { alert('請設定 NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY 環境變數。'); setLoading(false); return; }
            // @ts-ignore
            const adminClient = _createSupabaseClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceRoleKey, { auth: { persistSession: false } });
+           
+           // Update password
            const { error } = await adminClient.auth.admin.updateUserById(request.uid, { password: tempPassword });
            if(error) throw error;
+           
+           // Use adminClient to update the request (bypassing RLS)
+           currentClient = adminClient;
         }
 
         // 更新狀態：status -> completed, is_finish -> true
         if (!useMock) { 
-            await supabase.from('reset_requests')
+            const { error: updateError } = await currentClient.from('reset_requests')
                 .update({ status: 'completed', is_finish: true })
-                .eq('id', request.id); 
+                .eq('id', request.id);
+            if (updateError) throw updateError;
         } else { 
             mockDb.reset_requests = mockDb.reset_requests.map((r:any) => 
                 r.id === request.id ? { ...r, status: 'completed', is_finish: true } : r
@@ -668,20 +676,36 @@ export default function RegistrationApp() {
   // [修改] 駁回邏輯：更新狀態為 'rejected' 並勾選 is_finish，最後反灰
   const handleRejectReset = async (id: number) => {
       if(!confirm('確定駁回?')) return;
-      if (!useMock) { 
-          await supabase.from('reset_requests')
-            .update({ status: 'rejected', is_finish: true })
-            .eq('id', id); 
-      } else { 
-          mockDb.reset_requests = mockDb.reset_requests.map((r:any) => 
-            r.id === id ? { ...r, status: 'rejected', is_finish: true } : r
-          ); 
-      }
       
-      // Optimistic update
-      setResetRequests(prev => prev.map(r => 
-        r.id === id ? { ...r, status: 'rejected', is_finish: true } : r
-      ));
+      try {
+        let currentClient = supabase;
+
+        if (!useMock) { 
+            const serviceRoleKey = process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY;
+            if (serviceRoleKey) {
+                // @ts-ignore
+                const adminClient = _createSupabaseClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceRoleKey, { auth: { persistSession: false } });
+                currentClient = adminClient;
+            }
+
+            const { error } = await currentClient.from('reset_requests')
+              .update({ status: 'rejected', is_finish: true })
+              .eq('id', id); 
+            
+            if(error) throw error;
+        } else { 
+            mockDb.reset_requests = mockDb.reset_requests.map((r:any) => 
+              r.id === id ? { ...r, status: 'rejected', is_finish: true } : r
+            ); 
+        }
+        
+        // Optimistic update
+        setResetRequests(prev => prev.map(r => 
+          r.id === id ? { ...r, status: 'rejected', is_finish: true } : r
+        ));
+      } catch (e: any) {
+          alert('操作失敗: ' + e.message);
+      }
   };
 
   const handleAdminAddUser = async () => {
