@@ -71,8 +71,7 @@ export default function RegistrationApp() {
   const [allUsers, setAllUsers] = useState<any[]>([]); 
   const [user, setUser] = useState<any>(null);
   
-  // [關鍵修正] 使用 useState 初始化 supabase 實例，避免每次 render 都重新建立導致無限迴圈與閃爍
-  const [supabase] = useState(() => getSupabase());
+  const supabase = getSupabase(); 
   const client = useMemo(() => supabase || createClient('mock','mock'), [supabase]);
 
   const FAKE_DOMAIN = "@my-notes.com";
@@ -209,8 +208,8 @@ export default function RegistrationApp() {
            const userName = u.user_name || '未設定';
            const userIdLast4 = u.id_last4 || '????';
            
-           const count = nData.filter((n:any) => n.id_2 === userIdLast4 && n.sign_name.includes(userName)).length;
-           const note = nData.find((n:any) => n.id_2 === userIdLast4 && n.real_name === userName && n.dharma_name);
+           const count = (nData || []).filter((n:any) => n.id_2 === userIdLast4 && n.sign_name.includes(userName)).length;
+           const note = (nData || []).find((n:any) => n.id_2 === userIdLast4 && n.real_name === userName && n.dharma_name);
            
            return { 
              ...u, 
@@ -278,8 +277,9 @@ export default function RegistrationApp() {
     if (data.length === 0) return alert("無資料");
     const csvContent = "\ufeff" + ["大隊,小隊,精舍,姓名,身分證後四碼,法名,動作,開始日,開始時,結束日,結束時,協助,備註,登記時間,填表人,已刪除"].join(',') + '\n' + 
         data.map(n => `${n.team_big},${n.team_small},${n.monastery},${n.real_name},${n.id_2},${n.dharma_name},${n.action_type},${n.start_date},${n.start_time},${n.end_date},${n.end_time},${n.need_help?'是':'否'},"${(n.memo||'').replace(/"/g,'""')}",${n.created_at},${n.sign_name},${n.is_deleted?'是':''}`).join('\n');
+    const csvString = csvContent;
     const link = document.createElement('a');
-    link.href = URL.createObjectURL(new Blob([csvContent], { type: 'text/csv;charset=utf-8;' }));
+    link.href = URL.createObjectURL(new Blob([csvString], { type: 'text/csv;charset=utf-8;' }));
     link.download = 'export.csv';
     link.click();
   };
@@ -344,18 +344,34 @@ export default function RegistrationApp() {
     setLoading(false);
   };
 
+  // [修正] 修改密碼邏輯與 UI 邏輯修正
   const handleChangePassword = async () => {
-    if (!newPassword || newPassword.length < 6) return alert('至少6碼');
-    if (!supabase) return alert('預覽模式無法修改');
+    // 檢查是否為預覽模式
+    if (!supabase) return alert('預覽模式無法執行密碼修改');
+
+    // 檢查目標使用者
+    if (!pwdTargetUser) return;
+
     if (pwdTargetUser === 'SELF') {
+      // 修改自己的密碼 (只有自己能改自己)
+      if (!newPassword || newPassword.length < 6) return alert('新密碼至少需6碼');
+      
       const { error } = await supabase.auth.updateUser({ password: newPassword });
-      if (error) alert(error.message); else alert('成功');
+      if (error) alert('修改失敗: ' + error.message); 
+      else alert('密碼修改成功！');
+      
     } else {
-      const { error } = await supabase.auth.resetPasswordForEmail(pwdTargetUser.email);
+      // 管理員重設他人密碼 -> 只能發送重設信
+      // 此處不檢查 newPassword，因為 sendResetPasswordEmail 不需要新密碼
+      const { error } = await supabase.auth.resetPasswordForEmail(pwdTargetUser.email, {
+          redirectTo: typeof window !== 'undefined' ? window.location.origin : undefined
+      });
+      
       if (error) alert('發送重設信失敗: ' + error.message);
-      else alert(`已發送重設密碼信件至 ${pwdTargetUser.email}`);
+      else alert(`已發送重設密碼信件至 ${pwdTargetUser.email}。\n\n(系統限制：管理員無法直接設定他人密碼，需由使用者收信重設)`);
     }
     setShowPwdModal(false);
+    setNewPassword('');
   };
 
   const handleAdminAddUser = async () => {
@@ -475,8 +491,7 @@ export default function RegistrationApp() {
         setUser(user);
         if(user) {
             const name = getDisplayNameOnly(user.email||'');
-            // [修正] 預設填入姓名，但允許之後被修改 (僅初始化一次)
-            setFormData(p => ({...p, real_name: p.real_name || name}));
+            setFormData(p => ({...p, real_name: name}));
             fetchNotes();
             fetchBulletins();
             fetchOptions();
@@ -499,7 +514,7 @@ export default function RegistrationApp() {
 
   return (
     <div className="min-h-screen bg-amber-50 flex flex-col items-center py-10 px-4 font-sans text-gray-900">
-      <h1 className="text-3xl font-bold text-amber-900 mb-8 tracking-wide">一一報名系統 (v2.5)</h1>
+      <h1 className="text-3xl font-bold text-amber-900 mb-8 tracking-wide">一一報名系統 (v2.6)</h1>
 
       {!user ? (
         <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-sm border border-amber-200">
@@ -641,7 +656,7 @@ export default function RegistrationApp() {
                        <button onClick={handleAdminAddUser} className="bg-blue-600 text-white px-3 py-1 rounded text-sm">新增</button>
                     </div>
                  </div>
-                 {/* [使用者管理列表] 確認欄位 */}
+                 {/* [修正] 使用者管理列表欄位調整與UI優化 */}
                  <table className="w-full text-sm text-left">
                     <thead className="bg-gray-50">
                         <tr>
@@ -660,7 +675,9 @@ export default function RegistrationApp() {
                              <td className="p-2">{u.dharma || '-'}</td>
                              <td className="p-2">{u.id_last4}</td>
                              <td className="p-2">
-                                <button onClick={() => { setPwdTargetUser(u); setShowPwdModal(true); }} className="text-blue-600 hover:text-blue-800 text-xs border border-blue-200 px-2 py-1 rounded bg-blue-50">重設</button>
+                                <button onClick={() => { setPwdTargetUser(u); setShowPwdModal(true); }} className="text-blue-600 hover:text-blue-800 text-xs border border-blue-200 px-2 py-1 rounded bg-blue-50">
+                                   重設
+                                </button>
                              </td>
                              <td className="p-2">
                                 <button onClick={()=>handleToggleUserDisabled(u.email, u.is_disabled)} className={`px-2 py-1 rounded text-xs border ${u.is_disabled ? 'bg-green-50 text-green-600 border-green-200' : 'bg-red-50 text-red-600 border-red-200'}`}>
@@ -678,9 +695,29 @@ export default function RegistrationApp() {
            {showPwdModal && (
              <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
                 <div className="bg-white p-6 rounded shadow-lg w-full max-w-sm">
-                   <h3 className="font-bold mb-4">重設密碼 ({pwdTargetUser?.display_name})</h3>
-                   <input type="password" placeholder="新密碼" className="w-full border p-2 mb-4 rounded" value={newPassword} onChange={e => setNewPassword(e.target.value)} />
-                   <div className="flex justify-end gap-2"><button onClick={() => setShowPwdModal(false)} className="px-4 py-2 bg-gray-200 rounded">取消</button><button onClick={handleChangePassword} className="px-4 py-2 bg-blue-600 text-white rounded">確認</button></div>
+                   {/* [修正] 密碼修改 Modal 邏輯顯示 */}
+                   <h3 className="font-bold mb-4">
+                      {pwdTargetUser === 'SELF' ? '修改我的密碼' : '發送密碼重設信'}
+                   </h3>
+                   
+                   {pwdTargetUser === 'SELF' ? (
+                       <>
+                         <input type="password" placeholder="請輸入新密碼 (至少6碼)" className="w-full border p-2 mb-4 rounded" value={newPassword} onChange={e => setNewPassword(e.target.value)} />
+                         <div className="text-xs text-gray-500 mb-4">將立即更新您的登入密碼。</div>
+                       </>
+                   ) : (
+                       <div className="mb-4 text-sm text-gray-600">
+                          <p className="mb-2">您正在為 <strong>{pwdTargetUser?.display_name}</strong> 重設密碼。</p>
+                          <p>基於安全性限制，系統將發送一封<strong>密碼重設信</strong>至該使用者的信箱，請通知使用者收信並設定新密碼。</p>
+                       </div>
+                   )}
+
+                   <div className="flex justify-end gap-2">
+                       <button onClick={() => setShowPwdModal(false)} className="px-4 py-2 bg-gray-200 rounded">取消</button>
+                       <button onClick={handleChangePassword} className="px-4 py-2 bg-blue-600 text-white rounded">
+                           {pwdTargetUser === 'SELF' ? '確認修改' : '發送重設信'}
+                       </button>
+                   </div>
                 </div>
              </div>
            )}
