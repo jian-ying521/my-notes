@@ -45,9 +45,12 @@ let mockUser: any = null;
 let mockDb: any = {
   notes: [
       { id: 1, team_big: '觀音隊', team_small: '第1小隊', monastery: '台北', real_name: 'admin', dharma_name: '寬明', action_type: '新增', start_date: '2023-10-01', start_time: '08:00', end_date: '2023-10-01', end_time: '12:00', need_help: true, memo: '模擬資料', id_2: '1111', sign_name: 'admin (1111)', is_deleted: false, created_at: new Date('2023-10-01T08:00:00').toISOString(), user_id: 'user-1' },
-      { id: 2, team_big: '普賢隊', team_small: '第2小隊', monastery: '台中', real_name: 'admin', dharma_name: '寬明', action_type: '異動', start_date: '2023-10-02', start_time: '14:00', end_date: '2023-10-04', end_time: '17:00', need_help: false, memo: '測試多日行程', id_2: '1111', sign_name: 'admin (1111)', is_deleted: false, created_at: new Date('2023-10-02T09:00:00').toISOString(), user_id: 'user-1' }
+      { id: 2, team_big: '普賢隊', team_small: '第2小隊', monastery: '台中', real_name: 'admin', dharma_name: '寬明', action_type: '異動', start_date: '2023-10-02', start_time: '14:00', end_date: '2023-10-04', end_time: '17:00', need_help: false, memo: '測試多日行程', id_2: '1111', sign_name: 'admin (1111)', is_deleted: false, created_at: new Date('2023-10-02T09:00:00').toISOString(), user_id: 'user-1' },
+      { id: 101, team_big: '文殊隊', team_small: '第3小隊', monastery: '高雄', real_name: '王小明', dharma_name: '法明', action_type: '新增', start_date: '2025-02-15', start_time: '09:00', end_date: '2025-02-15', end_time: '17:00', need_help: false, memo: '我是王小明的第一筆紀錄', id_2: '5566', sign_name: '王小明 (5566)', is_deleted: false, created_at: new Date('2025-01-15T10:00:00').toISOString(), user_id: 'user-2' },
+      // [新增] 模擬一筆已過期的資料，測試「已圓滿」功能
+      { id: 102, team_big: '地藏隊', team_small: '第1小隊', monastery: '花蓮', real_name: '王小明', dharma_name: '法明', action_type: '異動', start_date: '2023-03-01', start_time: '08:30', end_date: '2023-03-03', end_time: '16:00', need_help: true, memo: '已結束的行程', id_2: '5566', sign_name: '王小明 (5566)', is_deleted: false, created_at: new Date('2023-01-20T14:30:00').toISOString(), user_id: 'user-2' }
   ],
-  bulletins: [{ id: 1, content: '🎉 歡迎使用一一報名系統 (v3.2)！資料列表已更新。', image_url: '', created_at: new Date().toISOString() }],
+  bulletins: [{ id: 1, content: '🎉 歡迎使用一一報名系統 (v3.4)！\n現在過期的紀錄會自動標記為「已圓滿」。', image_url: '', created_at: new Date().toISOString() }],
   user_permissions: [
       { id: 1, email: 'admin@example.com', uid: 'user-1', is_admin: true, is_disabled: false, user_name: 'admin', id_last4: '1111', created_at: new Date().toISOString() },
       { id: 2, email: 'user@example.com', uid: 'user-2', is_admin: false, is_disabled: false, user_name: '王小明', id_last4: '5566', created_at: new Date().toISOString() }
@@ -208,15 +211,12 @@ const getIdLast4FromEmail = (email: string) => {
     const fullName = decodeName(email); return (fullName.length > 4 && !isNaN(Number(fullName.slice(-4)))) ? fullName.slice(-4) : '';
 };
 
-// [新增] 計算發心日數 helper function
 const calculateDuration = (start: string, end: string) => {
     if (!start || !end) return '-';
     const d1 = new Date(start);
     const d2 = new Date(end);
-    // 計算毫秒差，轉為天數
     const diffTime = d2.getTime() - d1.getTime();
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
-    // 規則：迄日 - 起日 + 1
     return diffDays + 1;
 };
 
@@ -682,7 +682,7 @@ export default function RegistrationApp() {
     <div className="min-h-screen bg-amber-50 flex flex-col items-center py-10 px-4 font-sans text-gray-900">
       <h1 className="text-3xl font-extrabold text-amber-900 mb-8 tracking-wide flex items-center gap-3">
         <Shield className="w-8 h-8 text-amber-600" />
-        一一報名系統 (v3.2)
+        一一報名系統 (v3.4)
       </h1>
 
       {!user ? (
@@ -853,31 +853,43 @@ export default function RegistrationApp() {
 
            {activeTab === 'history' && (
              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {notes.filter(n => n.user_id === user.id).map(n => (
-                   <div key={n.id} className={`bg-white p-5 rounded-2xl shadow-sm border border-gray-100 hover:shadow-md transition-all relative ${n.is_deleted ? 'opacity-50 grayscale' : ''}`}>
-                      <div className={`absolute top-4 right-4 px-2 py-1 rounded text-xs font-bold ${n.action_type === '新增' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>
-                        {n.action_type}{n.is_deleted && ' (已刪)'}
-                      </div>
-                      <div className="mb-3">
-                        <h4 className="font-bold text-lg text-gray-800">{n.team_big}</h4>
-                        <span className="text-sm text-gray-500 font-medium">{n.team_small}</span>
-                      </div>
-                      
-                      <div className="space-y-2 text-sm text-gray-600 bg-gray-50 p-3 rounded-xl mb-3">
-                        <div className="flex items-center gap-2"><User className="w-4 h-4 text-gray-400"/> {n.real_name} {n.dharma_name ? `(${n.dharma_name})` : ''}</div>
-                        <div className="flex items-center gap-2"><Calendar className="w-4 h-4 text-gray-400"/> 起: {n.start_date} {n.start_time}</div>
-                        <div className="flex items-center gap-2"><Calendar className="w-4 h-4 text-gray-400"/> 迄: {n.end_date} {n.end_time}</div>
-                      </div>
+                {notes.filter(n => n.user_id === user.id).map(n => {
+                   // [新增] 判斷是否已過期 (小於今日)
+                   const today = new Date();
+                   today.setHours(0,0,0,0);
+                   const endDate = new Date(n.end_date);
+                   const isCompleted = endDate < today;
 
-                      <div className="flex justify-between items-center pt-2 border-t border-gray-100 mt-2">
-                         <span className="text-xs text-gray-400">填表: {n.sign_name}</span>
-                         <label className="flex items-center gap-1 cursor-pointer text-xs font-bold text-red-500 hover:bg-red-50 px-2 py-1 rounded transition-colors">
-                           <input type="checkbox" className="accent-red-500" checked={n.is_deleted} onChange={() => handleToggleDeleteNote(n.id, n.is_deleted)} /> 
-                           刪除
-                         </label>
-                      </div>
-                   </div>
-                ))}
+                   return (
+                     <div key={n.id} className={`bg-white p-5 rounded-2xl shadow-sm border border-gray-100 hover:shadow-md transition-all relative ${n.is_deleted ? 'opacity-50 grayscale' : isCompleted ? 'opacity-70 bg-gray-50' : ''}`}>
+                        <div className={`absolute top-4 right-4 px-2 py-1 rounded text-xs font-bold ${
+                            n.is_deleted ? 'bg-red-100 text-red-700' : 
+                            isCompleted ? 'bg-gray-200 text-gray-600' : // 已圓滿樣式
+                            n.action_type === '新增' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'
+                        }`}>
+                          {n.is_deleted ? '已刪除' : isCompleted ? '已圓滿' : n.action_type}
+                        </div>
+                        <div className="mb-3">
+                          <h4 className="font-bold text-lg text-gray-800">{n.team_big}</h4>
+                          <span className="text-sm text-gray-500 font-medium">{n.team_small}</span>
+                        </div>
+                        
+                        <div className="space-y-2 text-sm text-gray-600 bg-gray-50 p-3 rounded-xl mb-3">
+                          <div className="flex items-center gap-2"><User className="w-4 h-4 text-gray-400"/> {n.real_name} {n.dharma_name ? `(${n.dharma_name})` : ''}</div>
+                          <div className="flex items-center gap-2"><Calendar className="w-4 h-4 text-gray-400"/> 起: {n.start_date} {n.start_time}</div>
+                          <div className="flex items-center gap-2"><Calendar className="w-4 h-4 text-gray-400"/> 迄: {n.end_date} {n.end_time}</div>
+                        </div>
+
+                        <div className="flex justify-end items-center pt-2 border-t border-gray-100 mt-2">
+                           {/* [確認移除] 這裡已經沒有填表人欄位，只剩刪除按鈕 */}
+                           <label className="flex items-center gap-1 cursor-pointer text-xs font-bold text-red-500 hover:bg-red-50 px-2 py-1 rounded transition-colors">
+                             <input type="checkbox" className="accent-red-500" checked={n.is_deleted} onChange={() => handleToggleDeleteNote(n.id, n.is_deleted)} /> 
+                             刪除
+                           </label>
+                        </div>
+                     </div>
+                   );
+                })}
                 {notes.filter(n => n.user_id === user.id).length === 0 && (
                   <div className="col-span-full py-10 text-center text-gray-400 bg-gray-50 rounded-2xl border-2 border-dashed border-gray-200">
                     目前沒有報名紀錄
@@ -934,8 +946,8 @@ export default function RegistrationApp() {
                       <thead className="bg-gray-50 text-gray-600">
                         <tr>
                           <th className="p-3 rounded-l-lg">大隊</th>
+                          <th className="p-3">小隊</th> {/* [新增] 小隊欄位 */}
                           <th className="p-3">姓名</th>
-                          {/* [修改] 原本的「日期」欄位拆分為：發心起日/時、發心迄日/時、發心日數 */}
                           <th className="p-3">發心起日/時</th>
                           <th className="p-3">發心迄日/時</th>
                           <th className="p-3">發心日數</th>
@@ -946,21 +958,19 @@ export default function RegistrationApp() {
                         {notes.map(n=>(
                           <tr key={n.id} className="hover:bg-gray-50/50 transition-colors">
                             <td className="p-3 font-medium text-gray-800">{n.team_big}</td>
+                            <td className="p-3 text-gray-600">{n.team_small}</td> {/* [新增] 顯示小隊資料 */}
                             <td className="p-3">{n.real_name}</td>
                             
-                            {/* [新增] 顯示起日與時間 */}
                             <td className="p-3 text-gray-600">
                               <div className="font-medium">{n.start_date}</div>
                               <div className="text-xs text-gray-400">{n.start_time}</div>
                             </td>
                             
-                            {/* [新增] 顯示迄日與時間 */}
                             <td className="p-3 text-gray-600">
                               <div className="font-medium">{n.end_date}</div>
                               <div className="text-xs text-gray-400">{n.end_time}</div>
                             </td>
                             
-                            {/* [新增] 顯示計算後的天數 */}
                             <td className="p-3 text-center">
                               <span className="bg-amber-100 text-amber-800 px-2 py-1 rounded font-bold text-xs">
                                 {calculateDuration(n.start_date, n.end_date)} 天
