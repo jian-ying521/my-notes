@@ -50,7 +50,7 @@ let mockDb: any = {
       // [新增] 模擬一筆已過期的資料，測試「已圓滿」功能
       { id: 102, team_big: '地藏隊', team_small: '第1小隊', monastery: '花蓮', real_name: '王小明', dharma_name: '法明', action_type: '異動', start_date: '2023-03-01', start_time: '08:30', end_date: '2023-03-03', end_time: '16:00', need_help: true, memo: '已結束的行程', id_2: '5566', sign_name: '王小明 (5566)', is_deleted: false, created_at: new Date('2023-01-20T14:30:00').toISOString(), user_id: 'user-2' }
   ],
-  bulletins: [{ id: 1, content: '🎉 歡迎使用一一報名系統 (v3.4)！\n現在過期的紀錄會自動標記為「已圓滿」。', image_url: '', created_at: new Date().toISOString() }],
+  bulletins: [{ id: 1, content: '🎉 歡迎使用一一報名系統 (v3.5)！\n管理員現在可以直接在用戶列表設定其他管理員了。', image_url: '', created_at: new Date().toISOString() }],
   user_permissions: [
       { id: 1, email: 'admin@example.com', uid: 'user-1', is_admin: true, is_disabled: false, user_name: 'admin', id_last4: '1111', created_at: new Date().toISOString() },
       { id: 2, email: 'user@example.com', uid: 'user-2', is_admin: false, is_disabled: false, user_name: '王小明', id_last4: '5566', created_at: new Date().toISOString() }
@@ -424,6 +424,25 @@ export default function RegistrationApp() {
       }
   };
 
+  // [新增] 切換用戶管理員權限
+  const handleToggleUserAdmin = async (email: string, currentStatus: boolean) => {
+      // 安全檢查：不能取消自己的管理員權限
+      if (user?.email === email && currentStatus === true) {
+          return alert('為避免系統鎖死，您不能取消自己的管理員權限。');
+      }
+
+      if (!confirm(`確定要${currentStatus ? '取消' : '設定'}此用戶的管理員權限嗎？`)) return;
+
+      if (!useMock) {
+          const { error } = await supabase.from('user_permissions').update({ is_admin: !currentStatus }).eq('email', email);
+          if (!error) fetchAllUsers();
+          else alert('更新失敗: ' + error.message);
+      } else {
+          mockDb.user_permissions = mockDb.user_permissions.map((u: any) => u.email === email ? { ...u, is_admin: !currentStatus } : u);
+          fetchAllUsers();
+      }
+  };
+
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -614,17 +633,24 @@ export default function RegistrationApp() {
   };
 
   const handleLogin = async () => {
-    if (useMock) {
-        const email = encodeName(username+idLast4) + FAKE_DOMAIN;
-        setUser({ email, id: 'mock-user' });
-        setFormData(p => ({...p, real_name: username}));
-        checkUserStatus(email);
-        return;
-    }
     const email = encodeName(username+idLast4) + FAKE_DOMAIN;
+    
+    // [修正] 統一使用 signInWithPassword，Mock Client 也有實作此方法且邏輯更完整 (會查對應 ID)
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    if(error) alert('登入失敗');
-    else { setUser(data.user); setFormData(p => ({...p, real_name: username})); checkUserStatus(email); }
+    
+    if(error) {
+        alert('登入失敗');
+    } else {
+        setUser(data.user);
+        setFormData(p => ({...p, real_name: username}));
+        
+        // [新增] 登入成功後立即讀取資料，不需要重新整理
+        fetchNotes();
+        fetchBulletins();
+        fetchOptions();
+        
+        checkUserStatus(email);
+    }
   };
 
   const handleSignUp = async () => {
@@ -682,7 +708,7 @@ export default function RegistrationApp() {
     <div className="min-h-screen bg-amber-50 flex flex-col items-center py-10 px-4 font-sans text-gray-900">
       <h1 className="text-3xl font-extrabold text-amber-900 mb-8 tracking-wide flex items-center gap-3">
         <Shield className="w-8 h-8 text-amber-600" />
-        一一報名系統 (v3.4)
+        一一報名系統 (v3.5)
       </h1>
 
       {!user ? (
@@ -1060,7 +1086,7 @@ export default function RegistrationApp() {
                               <th className="p-3 rounded-l-lg">姓名</th>
                               <th className="p-3">法名</th>
                               <th className="p-3">身份證ID</th>
-                              {/* 依照要求移除「修改密碼」欄位 */}
+                              <th className="p-3">管理員</th>
                               <th className="p-3">狀態</th>
                               <th className="p-3 text-right rounded-r-lg">報名數</th>
                           </tr>
@@ -1071,6 +1097,17 @@ export default function RegistrationApp() {
                                <td className="p-3 font-bold text-gray-800">{u.display_name}</td>
                                <td className="p-3 text-gray-500">{u.dharma || '-'}</td>
                                <td className="p-3 font-mono text-gray-500">{u.id_last4}</td>
+                               <td className="p-3">
+                                  <label className="flex items-center cursor-pointer">
+                                    <input 
+                                        type="checkbox" 
+                                        className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                                        checked={u.is_admin || false} 
+                                        onChange={() => handleToggleUserAdmin(u.email, u.is_admin)}
+                                    />
+                                    <span className="ml-2 text-xs text-gray-500 select-none">{u.is_admin ? '是' : '否'}</span>
+                                  </label>
+                               </td>
                                <td className="p-3">
                                   <button onClick={()=>handleToggleUserDisabled(u.email, u.is_disabled)} className={`px-3 py-1 rounded-full text-xs font-bold border transition-colors ${u.is_disabled ? 'bg-red-50 text-red-600 border-red-200 hover:bg-red-100' : 'bg-green-50 text-green-600 border-green-200 hover:bg-green-100'}`}>
                                       {u.is_disabled ? '已停用' : '啟用中'}
