@@ -14,6 +14,7 @@ import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 // import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 
+
 // --- 全域變數宣告 ---
 let mockUser: any = null;
 let mockDb: any = {
@@ -45,6 +46,7 @@ const createClient = (url: string, key: string, options?: any) => {
   return createSupabaseClient(url, key, options);
 };
 
+
 // --- Helper Functions ---
 const getSupabase = () => {
   let url = '';
@@ -69,13 +71,8 @@ export default function RegistrationApp() {
   const [allUsers, setAllUsers] = useState<any[]>([]); 
   const [user, setUser] = useState<any>(null);
   
-  // 取得 Supabase 實例
   const supabase = getSupabase(); 
-  
-  // [關鍵修正 1] 使用 useMemo 鎖定 client 物件，防止重複渲染導致輸入框重置或選單閃爍
-  const client = useMemo(() => {
-    return supabase || createClient('mock','mock');
-  }, [supabase]);
+  const client = useMemo(() => supabase || createClient('mock','mock'), [supabase]);
 
   const FAKE_DOMAIN = "@my-notes.com";
 
@@ -107,6 +104,9 @@ export default function RegistrationApp() {
   const [addUserLast4, setAddUserLast4] = useState('');
   const [addUserPwd, setAddUserPwd] = useState('');
 
+  // [修正] 日期限制改用 state，避免 Build error
+  const [minStartDate, setMinStartDate] = useState('');
+
   const [formData, setFormData] = useState({
     team_big: '', team_small: '', monastery: '', real_name: '', dharma_name: '',
     action_type: '新增', start_date: '', start_time: '', end_date: '', end_time: '',
@@ -127,15 +127,19 @@ export default function RegistrationApp() {
     const fullName = decodeName(email); return (fullName.length > 4 && !isNaN(Number(fullName.slice(-4)))) ? fullName.slice(-4) : '';
   };
   const isExpired = (d: string, t: string) => { if(!d) return false; return new Date(`${d}T${t||'23:59:59'}`) < new Date(); };
-  const getTomorrowDate = () => {
-    const d = new Date(); d.setDate(d.getDate() + 1);
-    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-  };
-  const minStartDate = getTomorrowDate();
 
-  // === Actions (Functions) ===
+  // [修正] 將日期計算移至 useEffect，避免 Next.js Build Error
+  useEffect(() => {
+    const d = new Date(); 
+    d.setDate(d.getDate() + 1);
+    const dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    setMinStartDate(dateStr);
+  }, []);
+
+  // === 3. 資料讀取函式 (Fetch Functions) ===
+
   const handleLogout = useCallback(async () => {
-    await client.auth.signOut();
+    if (client) await client.auth.signOut();
     setUser(null); setNotes([]); setBulletins([]); setUsername(''); setIdLast4(''); setPassword('');
     setIsAdmin(false); setIsLoginMode(true); setActiveTab('bulletin');
   }, [client]);
@@ -144,6 +148,7 @@ export default function RegistrationApp() {
       if (!email) return;
       try {
           if (!supabase) {
+             // Mock Mode Check
              if (mockDb && mockDb.user_permissions) {
                const perm = mockDb.user_permissions.find((u:any) => u.email === email);
                if (perm) {
@@ -162,7 +167,6 @@ export default function RegistrationApp() {
       } catch (e) { console.error(e); }
   }, [supabase, client, handleLogout]);
 
-  // 讀取選項
   const fetchOptions = useCallback(async () => {
     try {
       const { data: bigDataRaw } = await client.from('system_options').select('*').eq('category', 'team_big').order('created_at', { ascending: true });
@@ -170,22 +174,26 @@ export default function RegistrationApp() {
       const finalBig = (!supabase && bigData.length === 0 && mockDb?.system_options) ? 
                        mockDb.system_options.filter((o:any)=>o.category==='team_big') : bigData;
       setTeamBigOptions(finalBig);
+      // [修正] 移除強制預設值，讓使用者自己選
       
       const { data: smallDataRaw } = await client.from('system_options').select('*').eq('category', 'team_small').order('created_at', { ascending: true });
       const smallData = smallDataRaw || [];
       const finalSmall = (!supabase && smallData.length === 0 && mockDb?.system_options) ? 
                          mockDb.system_options.filter((o:any)=>o.category==='team_small') : smallData;
       setTeamSmallOptions(finalSmall);
+      // [修正] 移除強制預設值
 
     } catch (e) { console.error(e); }
   }, [client, supabase]);
 
-  const fetchBulletins = async () => {
+  const fetchBulletins = useCallback(async () => {
     if (!client) return;
     const { data } = await client.from('bulletins').select('*').order('created_at', { ascending: false });
+    // [修正] 加入 || [] 避免 null 賦值給 array
     if(data) setBulletins(data);
-    else if(!supabase && mockDb?.bulletins) setBulletins(mockDb.bulletins);
-  };
+    else if (!supabase && mockDb?.bulletins) setBulletins(mockDb.bulletins);
+    else setBulletins([]);
+  }, [client, supabase]);
 
   const fetchAllUsers = useCallback(async () => {
     let pData: any[] = [];
@@ -206,8 +214,8 @@ export default function RegistrationApp() {
            const userName = u.user_name || '未設定';
            const userIdLast4 = u.id_last4 || '????';
            
-           const count = (nData || []).filter((n:any) => n.id_2 === userIdLast4 && n.sign_name.includes(userName)).length;
-           const note = (nData || []).find((n:any) => n.id_2 === userIdLast4 && n.real_name === userName && n.dharma_name);
+           const count = nData.filter((n:any) => n.id_2 === userIdLast4 && n.sign_name.includes(userName)).length;
+           const note = nData.find((n:any) => n.id_2 === userIdLast4 && n.real_name === userName && n.dharma_name);
            
            return { 
              ...u, 
@@ -220,15 +228,19 @@ export default function RegistrationApp() {
     }
   }, [supabase]);
 
-  const fetchNotes = async (targetUser: any = user) => {
+  const fetchNotes = useCallback(async () => {
       if(!client) return;
       const { data } = await client.from('notes').select('*').order('start_date', { ascending: true }).order('start_time', { ascending: true });
       if(data) setNotes(data);
       else if(!supabase && mockDb?.notes) setNotes(mockDb.notes);
-  };
+      else setNotes([]);
+  }, [client, supabase]);
+
+  // === 4. 操作函式 (Handlers) ===
 
   const handleInitializeDefaults = async () => {
       if (!confirm('確定要匯入預設選項嗎？')) return;
+      if (!supabase) return;
       setLoading(true);
       const defaultBig = ['觀音隊', '文殊隊', '普賢隊', '地藏隊', '彌勒隊'];
       const defaultSmall = ['第1小隊', '第2小隊', '第3小隊', '第4小隊', '第5小隊'];
@@ -236,7 +248,7 @@ export default function RegistrationApp() {
           ...defaultBig.map(v => ({ category: 'team_big', value: v })),
           ...defaultSmall.map(v => ({ category: 'team_small', value: v }))
       ];
-      const { error } = await client.from('system_options').insert(insertPayload);
+      const { error } = await supabase.from('system_options').insert(insertPayload);
       if (error) alert('匯入失敗：' + error.message);
       else {
           alert('預設選項匯入成功！');
@@ -249,8 +261,9 @@ export default function RegistrationApp() {
       if (!newOptionValue.trim()) return alert('請輸入名稱');
       setLoading(true);
       if (supabase) {
-          const { error } = await client.from('system_options').insert([{ category, value: newOptionValue.trim() }]);
-          if (error) alert('新增失敗'); else { setNewOptionValue(''); fetchOptions(); }
+          const { error } = await supabase.from('system_options').insert([{ category, value: newOptionValue.trim() }]);
+          if (error) alert('新增失敗: ' + error.message);
+          else { setNewOptionValue(''); fetchOptions(); }
       } else {
           mockDb.system_options.push({id: Date.now(), category, value: newOptionValue.trim()});
           setNewOptionValue(''); fetchOptions();
@@ -261,7 +274,7 @@ export default function RegistrationApp() {
   const handleDeleteOption = async (id: number) => {
       if(!confirm('刪除?')) return;
       if (supabase) {
-          const { error } = await client.from('system_options').delete().eq('id', id);
+          const { error } = await supabase.from('system_options').delete().eq('id', id);
           if (error) alert('刪除失敗'); else fetchOptions();
       } else {
          mockDb.system_options = mockDb.system_options.filter((o:any)=>o.id!==id); 
@@ -274,22 +287,17 @@ export default function RegistrationApp() {
     if (data.length === 0) return alert("無資料");
     const csvContent = "\ufeff" + ["大隊,小隊,精舍,姓名,身分證後四碼,法名,動作,開始日,開始時,結束日,結束時,協助,備註,登記時間,填表人,已刪除"].join(',') + '\n' + 
         data.map(n => `${n.team_big},${n.team_small},${n.monastery},${n.real_name},${n.id_2},${n.dharma_name},${n.action_type},${n.start_date},${n.start_time},${n.end_date},${n.end_time},${n.need_help?'是':'否'},"${(n.memo||'').replace(/"/g,'""')}",${n.created_at},${n.sign_name},${n.is_deleted?'是':''}`).join('\n');
-    const csvString = csvContent;
     const link = document.createElement('a');
-    link.href = URL.createObjectURL(new Blob([csvString], { type: 'text/csv;charset=utf-8;' }));
+    link.href = URL.createObjectURL(new Blob([csvContent], { type: 'text/csv;charset=utf-8;' }));
     link.download = 'export.csv';
     link.click();
   };
 
   const handleToggleUserDisabled = async (email: string, status: boolean) => {
-      if(supabase) { 
-        const { error } = await client.from('user_permissions').update({ is_disabled: !status }).eq('email', email);
-        if(!error) fetchAllUsers();
-        else alert('更新失敗: ' + error.message);
-      } else {
-         mockDb.user_permissions = mockDb.user_permissions.map((u:any)=>u.email===email ? {...u, is_disabled: !status} : u);
-         fetchAllUsers();
-      }
+      if(!supabase) return;
+      const { error } = await supabase.from('user_permissions').update({ is_disabled: !status }).eq('email', email);
+      if(!error) fetchAllUsers();
+      else alert('更新失敗: ' + error.message);
   };
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -328,7 +336,8 @@ export default function RegistrationApp() {
     setLoading(true);
     if (supabase) {
         const { data, error } = await supabase.from('notes').update({ is_deleted: !currentStatus }).eq('id', id).select();
-        if (error || (data && data.length===0)) alert('更新失敗或無權限 (請檢查 RLS)');
+        const result = data || [];
+        if (error || result.length === 0) alert('更新失敗或無權限 (請檢查 RLS)');
         else {
           setNotes(prev => prev.map(n => n.id === id ? { ...n, is_deleted: !currentStatus } : n));
           if (isAdmin) fetchAllUsers();
@@ -413,7 +422,7 @@ export default function RegistrationApp() {
     if(formData.start_date < minStartDate) return alert('日期錯誤');
     const signName = `${getDisplayNameOnly(user.email||'')} (${getIdLast4FromEmail(user.email||'')})`;
     if(supabase) {
-        const { error } = await client.from('notes').insert([{...formData, user_id: user.id, id_2: getIdLast4FromEmail(user.email||''), sign_name: signName }]);
+        const { error } = await supabase.from('notes').insert([{...formData, user_id: user.id, id_2: getIdLast4FromEmail(user.email||''), sign_name: signName }]);
         if(!error) { alert('成功'); window.location.reload(); }
         else alert('失敗');
     } else if (mockDb) {
@@ -464,19 +473,14 @@ export default function RegistrationApp() {
       }
   }, [activeTab, isAdmin, fetchAllUsers, fetchOptions]);
 
-  // [關鍵修正 2] 登入後只設定一次預設值，之後不再重置
   useEffect(() => {
     const init = async () => {
         if (!supabase) return;
         const { data: { user } } = await supabase.auth.getUser();
         setUser(user);
         if(user) {
-            // 只設定一次初始值
             const name = getDisplayNameOnly(user.email||'');
-            setFormData(p => {
-               if (!p.real_name) return {...p, real_name: name};
-               return p;
-            });
+            setFormData(p => ({...p, real_name: name}));
             fetchNotes();
             fetchBulletins();
             fetchOptions();
@@ -484,7 +488,7 @@ export default function RegistrationApp() {
         }
     };
     init();
-  }, [supabase]); // 移除其他依賴，避免重複執行
+  }, [fetchNotes, fetchBulletins, fetchOptions, checkUserStatus, supabase]);
 
   // UI
   const openPwdModal = (target: any) => {
@@ -499,7 +503,7 @@ export default function RegistrationApp() {
 
   return (
     <div className="min-h-screen bg-amber-50 flex flex-col items-center py-10 px-4 font-sans text-gray-900">
-      <h1 className="text-3xl font-bold text-amber-900 mb-8 tracking-wide">一一報名系統 (v2.4)</h1>
+      <h1 className="text-3xl font-bold text-amber-900 mb-8 tracking-wide">一一報名系統</h1>
 
       {!user ? (
         <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-sm border border-amber-200">
@@ -537,10 +541,10 @@ export default function RegistrationApp() {
            {/* Tabs */}
            <div className="flex mb-6 bg-amber-100 p-1 rounded-lg w-full overflow-x-auto">
              {['bulletin','form','history'].map(t => (
-                 <button key={t} onClick={()=>setActiveTab(t as any)} className={`flex-1 py-3 px-4 text-base rounded-md transition-all font-bold ${activeTab===t?'bg-white shadow-sm text-amber-800':'text-amber-600 hover:bg-amber-200/50'}`}>{t==='bulletin'?'📢 公告欄':t==='form'?'📝 我要報名':t==='history'?'📋 我的紀錄':''}</button>
+                 <button key={t} onClick={()=>setActiveTab(t as any)} className={`flex-1 py-3 px-2 rounded-md ${activeTab===t?'bg-white shadow-sm':'text-amber-600'}`}>{t==='bulletin'?'公告':t==='form'?'報名':'紀錄'}</button>
              ))}
              {isAdmin && ['admin_data','admin_users','admin_settings'].map(t => (
-                 <button key={t} onClick={()=>setActiveTab(t as any)} className={`flex-1 py-3 px-4 text-base rounded-md transition-all font-bold ${activeTab===t?'bg-white shadow-sm text-blue-800':'text-blue-600 hover:bg-blue-50/50'}`}>{t==='admin_data'?'📊 資料':t==='admin_users'?'👥 用戶':t==='admin_settings'?'⚙️ 設定':''}</button>
+                 <button key={t} onClick={()=>setActiveTab(t as any)} className={`flex-1 py-3 px-2 rounded-md ${activeTab===t?'bg-white shadow-sm':'text-amber-600'}`}>{t==='admin_data'?'資料':t==='admin_users'?'用戶':'設定'}</button>
              ))}
            </div>
 
