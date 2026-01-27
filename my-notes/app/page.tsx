@@ -233,7 +233,6 @@ const formatDateTime = (isoString: string) => {
     }
 };
 
-// [新增] 狀態判斷 Helper
 const getNoteStatus = (note: any) => {
     if (note.is_deleted) return 'deleted';
     const today = new Date();
@@ -243,7 +242,6 @@ const getNoteStatus = (note: any) => {
     return note.action_type === '新增' ? 'new' : 'modified';
 };
 
-// [修正] 將 TabButton 移出主元件，避免重複渲染導致失去焦點或點擊失效
 const TabButton = ({ id, label, icon: Icon, active, onClick, hasNotification }: any) => (
   <button 
     type="button"
@@ -318,7 +316,6 @@ export default function RegistrationApp() {
     setMinStartDate(dateStr);
   }, []);
 
-  // [修正] 將排序邏輯放入 useEffect，避免 prerendering 時的 new Date() 錯誤
   useEffect(() => {
     if (!notes || notes.length === 0) {
       setSortedNotes([]);
@@ -335,12 +332,10 @@ export default function RegistrationApp() {
       const isAInactive = statusA === 'deleted' || statusA === 'completed';
       const isBInactive = statusB === 'deleted' || statusB === 'completed';
 
-      // 1. 狀態分組：活躍在前，不活躍在後
       if (isAInactive !== isBInactive) {
         return isAInactive ? 1 : -1;
       }
 
-      // 2. 同組內依日期排序 (發心日時)
       const dateA = new Date(`${a.start_date}T${a.start_time || '00:00'}`);
       const dateB = new Date(`${b.start_date}T${b.start_time || '00:00'}`);
       return dateA.getTime() - dateB.getTime();
@@ -642,10 +637,17 @@ export default function RegistrationApp() {
            const { error } = await adminClient.auth.admin.updateUserById(request.uid, { password: tempPassword });
            if(error) throw error;
         }
+
+        // [修改] 先更新本地狀態以即時反映在 UI (變成已完成且反灰)
         if (!useMock) { await supabase.from('reset_requests').update({ status: 'completed' }).eq('id', request.id); } 
         else { mockDb.reset_requests = mockDb.reset_requests.map((r:any) => r.id === request.id ? { ...r, status: 'completed' } : r); }
+        
+        // Optimistic update for UI
+        setResetRequests(prev => prev.map(r => r.id === request.id ? { ...r, status: 'completed' } : r));
+
         setApprovedResult({ name: request.user_name, pwd: tempPassword });
-        setShowApprovalModal(true); fetchResetRequests(); 
+        setShowApprovalModal(true); 
+        // fetchResetRequests(); // Optional since we updated local state
     } catch(e: any) { alert('重設失敗: ' + e.message); }
     setLoading(false);
   };
@@ -654,7 +656,10 @@ export default function RegistrationApp() {
       if(!confirm('確定駁回?')) return;
       if (!useMock) { await supabase.from('reset_requests').update({ status: 'rejected' }).eq('id', id); } 
       else { mockDb.reset_requests = mockDb.reset_requests.map((r:any) => r.id === id ? { ...r, status: 'rejected' } : r); }
-      fetchResetRequests();
+      
+      // Optimistic update
+      setResetRequests(prev => prev.map(r => r.id === id ? { ...r, status: 'rejected' } : r));
+      // fetchResetRequests();
   };
 
   const handleAdminAddUser = async () => {
@@ -1118,7 +1123,8 @@ export default function RegistrationApp() {
                        </thead>
                        <tbody className="divide-y divide-gray-100">
                            {resetRequests.map(r => (
-                               <tr key={r.id} className={`hover:bg-gray-50 transition-colors ${r.status !== 'pending' ? 'opacity-60 bg-gray-50' : ''}`}>
+                               // [修改] 狀態不為 pending 時，整行反灰且透明度降低，模擬 disabled 狀態
+                               <tr key={r.id} className={`transition-colors ${r.status !== 'pending' ? 'bg-gray-100 opacity-50 select-none' : 'hover:bg-gray-50'}`}>
                                    <td className="p-3 font-bold text-gray-800">{r.user_name}</td>
                                    <td className="p-3 font-mono text-gray-500">{r.id_last4}</td>
                                    <td className="p-3 text-xs text-gray-400 font-mono">{formatDateTime(r.created_at)}</td>
@@ -1143,8 +1149,10 @@ export default function RegistrationApp() {
                                                </button>
                                            </div>
                                        )}
-                                       {/* [新增] 已審核狀態顯示 */}
+                                       {/* [新增] 已完成狀態顯示 (打勾) */}
                                        {r.status === 'completed' && <span className="text-green-600 font-bold text-xs flex items-center"><Check className="w-4 h-4 mr-1"/>已完成</span>}
+                                       {/* [新增] 已駁回狀態顯示 (叉叉) */}
+                                       {r.status === 'rejected' && <span className="text-red-600 font-bold text-xs flex items-center"><X className="w-4 h-4 mr-1"/>已駁回</span>}
                                    </td>
                                </tr>
                            ))}
