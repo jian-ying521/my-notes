@@ -36,6 +36,7 @@ import {
 // [步驟 1] 部署到 Vercel 時，請解除下方這一行的註解
 // import { createClient as _createSupabaseClient } from '@supabase/supabase-js';
 import { createClient as _createSupabaseClient } from '@supabase/supabase-js';
+
 // --- 設定控制開關 ---
 // [步驟 2] 部署時，請將 true 改為 false
 const useMock = false; 
@@ -49,7 +50,7 @@ let mockDb: any = {
       { id: 101, team_big: '文殊隊', team_small: '第3小隊', monastery: '高雄', real_name: '王小明', dharma_name: '法明', action_type: '新增', start_date: '2025-02-15', start_time: '09:00', end_date: '2025-02-15', end_time: '17:00', need_help: false, memo: '我是王小明的第一筆紀錄', id_2: '5566', sign_name: '王小明 (5566)', is_deleted: false, created_at: new Date('2025-01-15T10:00:00').toISOString(), user_id: 'user-2' },
       { id: 102, team_big: '地藏隊', team_small: '第1小隊', monastery: '花蓮', real_name: '王小明', dharma_name: '法明', action_type: '異動', start_date: '2023-03-01', start_time: '08:30', end_date: '2023-03-03', end_time: '16:00', need_help: true, memo: '已結束的行程', id_2: '5566', sign_name: '王小明 (5566)', is_deleted: false, created_at: new Date('2023-01-20T14:30:00').toISOString(), user_id: 'user-2' }
   ],
-  bulletins: [{ id: 1, content: '🎉 歡迎使用一一報名系統 (v3.6)！\n已新增操作歷程記錄功能。', image_url: '', created_at: new Date().toISOString() }],
+  bulletins: [{ id: 1, content: '🎉 歡迎使用一一報名系統 (v3.7)！\n資料列表已支援狀態顯示與智慧排序。', image_url: '', created_at: new Date().toISOString() }],
   user_permissions: [
       { id: 1, email: 'admin@example.com', uid: 'user-1', is_admin: true, is_disabled: false, user_name: 'admin', id_last4: '1111', created_at: new Date().toISOString() },
       { id: 2, email: 'user@example.com', uid: 'user-2', is_admin: false, is_disabled: false, user_name: '王小明', id_last4: '5566', created_at: new Date().toISOString() }
@@ -58,7 +59,7 @@ let mockDb: any = {
       { id: 101, user_name: '王小明', id_last4: '5566', uid: 'user-2', status: 'pending', created_at: new Date().toISOString() }
   ],
   users: [],
-  login_history: [],
+  login_history: [], 
   system_options: [
     { id: 1, category: 'team_big', value: '觀音隊' }, { id: 2, category: 'team_big', value: '文殊隊' },
     { id: 3, category: 'team_big', value: '普賢隊' }, { id: 4, category: 'team_big', value: '地藏隊' }, { id: 5, category: 'team_big', value: '彌勒隊' },
@@ -233,6 +234,32 @@ const formatDateTime = (isoString: string) => {
     }
 };
 
+// [新增] 狀態判斷 Helper
+const getNoteStatus = (note: any) => {
+    if (note.is_deleted) return 'deleted';
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const endDate = new Date(note.end_date);
+    if (endDate < today) return 'completed';
+    return note.action_type === '新增' ? 'new' : 'modified';
+};
+
+const TabButton = ({ id, label, icon: Icon, active, onClick, hasNotification }: any) => (
+  <button 
+    type="button"
+    onClick={onClick}
+    className={`flex-1 flex items-center justify-center space-x-2 py-3 px-2 rounded-lg transition-all duration-200 cursor-pointer select-none relative z-10 ${
+      active 
+        ? 'bg-white shadow-md text-amber-700 font-bold border border-amber-100 transform scale-105' 
+        : 'text-amber-600 hover:bg-amber-100 hover:text-amber-800'
+    }`}
+  >
+    <Icon className={`w-4 h-4 ${active ? 'stroke-2' : 'stroke-[1.5]'}`} />
+    <span className="text-sm md:text-base">{label}</span>
+    {hasNotification && <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse ml-1" />}
+  </button>
+);
+
 export default function RegistrationApp() {
   const supabase = useMemo(() => createSupabaseInstance(), []);
   const client = supabase;
@@ -289,6 +316,30 @@ export default function RegistrationApp() {
     const dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
     setMinStartDate(dateStr);
   }, []);
+
+  // [新增] 排序邏輯：發心日時 (升冪)，但已刪除/已圓滿排至最後
+  const sortedNotes = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    return [...notes].sort((a, b) => {
+      const statusA = getNoteStatus(a);
+      const statusB = getNoteStatus(b);
+      
+      const isAInactive = statusA === 'deleted' || statusA === 'completed';
+      const isBInactive = statusB === 'deleted' || statusB === 'completed';
+
+      // 1. 狀態分組：活躍在前，不活躍在後
+      if (isAInactive !== isBInactive) {
+        return isAInactive ? 1 : -1;
+      }
+
+      // 2. 同組內依日期排序 (發心日時)
+      const dateA = new Date(`${a.start_date}T${a.start_time || '00:00'}`);
+      const dateB = new Date(`${b.start_date}T${b.start_time || '00:00'}`);
+      return dateA.getTime() - dateB.getTime();
+    });
+  }, [notes]);
 
   const logToHistory = useCallback(async (action: string, targetUser: any) => {
       if (!targetUser) return;
@@ -410,12 +461,17 @@ export default function RegistrationApp() {
   };
 
   const exportToExcel = () => {
-    const data = filterMonth ? notes.filter(n => n.start_date.startsWith(filterMonth)) : notes;
+    // [修改] 匯出時也應用排序邏輯
+    const data = filterMonth ? sortedNotes.filter(n => n.start_date.startsWith(filterMonth)) : sortedNotes;
+    
     if (data.length === 0) return alert("無資料");
-    const csvContent = "\ufeff" + ["大隊,小隊,精舍,姓名,身分證後四碼,法名,動作,發心起日,發心起時,發心迄日,發心迄時,發心日數,協助,備註,登記時間,填表人,已刪除"].join(',') + '\n' + 
+    const csvContent = "\ufeff" + ["大隊,小隊,精舍,姓名,身分證後四碼,法名,動作,狀態,發心起日,發心起時,發心迄日,發心迄時,發心日數,協助,備註,登記時間,填表人,已刪除"].join(',') + '\n' + 
         data.map(n => {
             const days = calculateDuration(n.start_date, n.end_date);
-            return `${n.team_big},${n.team_small},${n.monastery},${n.real_name},${n.id_2},${n.dharma_name},${n.action_type},${n.start_date},${n.start_time},${n.end_date},${n.end_time},${days},${n.need_help?'是':'否'},"${(n.memo||'').replace(/"/g,'""')}",${n.created_at},${n.sign_name},${n.is_deleted?'是':''}`;
+            const status = getNoteStatus(n);
+            const statusText = status === 'deleted' ? '已刪除' : status === 'completed' ? '已圓滿' : n.action_type;
+            
+            return `${n.team_big},${n.team_small},${n.monastery},${n.real_name},${n.id_2},${n.dharma_name},${n.action_type},${statusText},${n.start_date},${n.start_time},${n.end_date},${n.end_time},${days},${n.need_help?'是':'否'},"${(n.memo||'').replace(/"/g,'""')}",${n.created_at},${n.sign_name},${n.is_deleted?'是':''}`;
         }).join('\n');
     const link = document.createElement('a');
     link.href = URL.createObjectURL(new Blob([csvContent], { type: 'text/csv;charset=utf-8;' }));
@@ -713,7 +769,7 @@ export default function RegistrationApp() {
     <div className="min-h-screen bg-amber-50 flex flex-col items-center py-10 px-4 font-sans text-gray-900">
       <h1 className="text-3xl font-extrabold text-amber-900 mb-8 tracking-wide flex items-center gap-3">
         <Shield className="w-8 h-8 text-amber-600" />
-        一一報名系統 (v3.6)
+        一一報名系統 (v3.7)
       </h1>
 
       {!user ? (
@@ -884,27 +940,26 @@ export default function RegistrationApp() {
 
            {activeTab === 'history' && (
              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {notes.filter(n => n.user_id === user.id).map(n => {
-                   const today = new Date();
-                   today.setHours(0,0,0,0);
-                   const endDate = new Date(n.end_date);
-                   const isCompleted = endDate < today;
+                {/* [修改] 應用 sortedNotes 於紀錄卡片顯示 */}
+                {sortedNotes.filter(n => n.user_id === user.id).map(n => {
+                   const status = getNoteStatus(n);
+                   const isInactive = status === 'deleted' || status === 'completed';
 
                    return (
-                     <div key={n.id} className={`bg-white p-5 rounded-2xl shadow-sm border border-gray-100 hover:shadow-md transition-all relative ${n.is_deleted ? 'opacity-50 grayscale' : isCompleted ? 'opacity-70 bg-gray-50' : ''}`}>
+                     <div key={n.id} className={`bg-white p-5 rounded-2xl shadow-sm border border-gray-100 hover:shadow-md transition-all relative ${isInactive ? 'opacity-60 bg-gray-50 grayscale-[0.5]' : ''}`}>
                         <div className={`absolute top-4 right-4 px-2 py-1 rounded text-xs font-bold ${
-                            n.is_deleted ? 'bg-red-100 text-red-700' : 
-                            isCompleted ? 'bg-gray-200 text-gray-600' : // 已圓滿樣式
+                            status === 'deleted' ? 'bg-red-100 text-red-700' : 
+                            status === 'completed' ? 'bg-gray-200 text-gray-600' : 
                             n.action_type === '新增' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'
                         }`}>
-                          {n.is_deleted ? '已刪除' : isCompleted ? '已圓滿' : n.action_type}
+                          {status === 'deleted' ? '已刪除' : status === 'completed' ? '已圓滿' : n.action_type}
                         </div>
                         <div className="mb-3">
                           <h4 className="font-bold text-lg text-gray-800">{n.team_big}</h4>
                           <span className="text-sm text-gray-500 font-medium">{n.team_small}</span>
                         </div>
                         
-                        <div className="space-y-2 text-sm text-gray-600 bg-gray-50 p-3 rounded-xl mb-3">
+                        <div className="space-y-2 text-sm text-gray-600 bg-white/50 p-3 rounded-xl mb-3 border border-gray-100">
                           <div className="flex items-center gap-2"><User className="w-4 h-4 text-gray-400"/> {n.real_name} {n.dharma_name ? `(${n.dharma_name})` : ''}</div>
                           <div className="flex items-center gap-2"><Calendar className="w-4 h-4 text-gray-400"/> 起: {n.start_date} {n.start_time}</div>
                           <div className="flex items-center gap-2"><Calendar className="w-4 h-4 text-gray-400"/> 迄: {n.end_date} {n.end_time}</div>
@@ -978,6 +1033,8 @@ export default function RegistrationApp() {
                           <th className="p-3">小隊</th>
                           <th className="p-3">姓名</th>
                           <th className="p-3">法名</th>
+                          {/* [新增] 狀態欄位 */}
+                          <th className="p-3 text-center">狀態</th> 
                           <th className="p-3">發心起日/時</th>
                           <th className="p-3">發心迄日/時</th>
                           <th className="p-3">發心日數</th>
@@ -985,21 +1042,37 @@ export default function RegistrationApp() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100">
-                        {notes.map(n=>(
-                          <tr key={n.id} className="hover:bg-gray-50/50 transition-colors">
+                        {/* [修改] 使用 sortedNotes 進行渲染 */}
+                        {sortedNotes.map(n=>{
+                          const status = getNoteStatus(n);
+                          const isInactive = status === 'deleted' || status === 'completed';
+                          
+                          return (
+                          <tr key={n.id} className={`hover:bg-gray-50/50 transition-colors ${isInactive ? 'text-gray-400' : ''}`}>
                             <td className="p-3 font-medium text-gray-800">{n.team_big}</td>
                             <td className="p-3 text-gray-600">{n.team_small}</td>
                             <td className="p-3">{n.real_name}</td>
                             <td className="p-3 text-gray-600">{n.dharma_name || '-'}</td>
                             
-                            <td className="p-3 text-gray-600">
+                            {/* [新增] 狀態標籤顯示 */}
+                            <td className="p-3 text-center">
+                                <span className={`px-2 py-1 rounded text-xs font-bold ${
+                                    status === 'deleted' ? 'bg-red-100 text-red-700' : 
+                                    status === 'completed' ? 'bg-gray-200 text-gray-600' :
+                                    n.action_type === '新增' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'
+                                }`}>
+                                    {status === 'deleted' ? '已刪除' : status === 'completed' ? '已圓滿' : n.action_type}
+                                </span>
+                            </td>
+
+                            <td className="p-3">
                               <div className="font-medium">{n.start_date}</div>
-                              <div className="text-xs text-gray-400">{n.start_time}</div>
+                              <div className="text-xs opacity-70">{n.start_time}</div>
                             </td>
                             
-                            <td className="p-3 text-gray-600">
+                            <td className="p-3">
                               <div className="font-medium">{n.end_date}</div>
-                              <div className="text-xs text-gray-400">{n.end_time}</div>
+                              <div className="text-xs opacity-70">{n.end_time}</div>
                             </td>
                             
                             <td className="p-3 text-center">
@@ -1010,7 +1083,7 @@ export default function RegistrationApp() {
 
                             <td className="p-3 text-blue-500 font-mono text-xs">{n.sign_name}</td>
                           </tr>
-                        ))}
+                        )})}
                       </tbody>
                    </table>
                  </div>
@@ -1049,7 +1122,8 @@ export default function RegistrationApp() {
                                          r.status==='completed' ? 'bg-green-100 text-green-700 border-green-200' : 
                                          'bg-red-100 text-red-700 border-red-200'
                                        }`}>
-                                           {r.status === 'pending' ? '待審核' : r.status === 'completed' ? '已完成' : '已駁回'}
+                                           {/* [修改] 狀態文字顯示邏輯修正 */}
+                                           {r.status === 'pending' ? '待審核' : r.status === 'completed' ? '已審核' : '已駁回'}
                                        </span>
                                    </td>
                                    <td className="p-3">
@@ -1063,6 +1137,8 @@ export default function RegistrationApp() {
                                                </button>
                                            </div>
                                        )}
+                                       {/* [新增] 已審核狀態顯示 */}
+                                       {r.status === 'completed' && <span className="text-green-600 font-bold text-xs flex items-center"><Check className="w-4 h-4 mr-1"/>已完成</span>}
                                    </td>
                                </tr>
                            ))}
