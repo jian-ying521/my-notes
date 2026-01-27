@@ -3,13 +3,17 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 
 // ==========================================
-// [⚠️ Vercel 部署設定指南]
-// 1. 確保 package.json 有: npm install @supabase/supabase-js
-// 2. [關鍵步驟] 部署前，請將下方第 15 行的註解解除 (// import ...)
-// 3. [關鍵步驟] 將第 27 行的 `useMock = true` 改為 `useMock = false`
+// [⚠️ 部署 Vercel 必讀]
+// 1. 請確保有安裝: npm install @supabase/supabase-js
+// 2. 解除下方 import 的註解。
+// 3. 刪除下方 [預覽用替代定義] 的區塊。
+// 4. [關鍵] 為了讓管理員能強制重設密碼，請在 Vercel 環境變數新增：
+//    - NEXT_PUBLIC_SUPABASE_URL
+//    - NEXT_PUBLIC_SUPABASE_ANON_KEY
+//    - NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY (從 Supabase 後台 > Settings > API 取得)
 // ==========================================
 
-// [步驟 1] 部署時，請解除下一行的註解：
+// [步驟 1] 部署到 Vercel 時，請解除下方這一行的註解
 // import { createClient as _createSupabaseClient } from '@supabase/supabase-js';
 import { createClient as _createSupabaseClient } from '@supabase/supabase-js';
 // --- 設定控制開關 ---
@@ -26,6 +30,10 @@ let mockDb: any = {
   user_permissions: [
       { id: 1, email: 'admin@example.com', uid: 'user-1', is_admin: true, is_disabled: false, user_name: 'admin', id_last4: '1234', created_at: new Date().toISOString() },
       { id: 2, email: 'user@example.com', uid: 'user-2', is_admin: false, is_disabled: false, user_name: '王小明', id_last4: '5566', created_at: new Date().toISOString() }
+  ],
+  // [新增] 重設密碼申請資料表
+  reset_requests: [
+      { id: 101, user_name: '王小明', id_last4: '5566', uid: 'user-2', status: 'pending', created_at: new Date().toISOString() }
   ],
   users: [],
   login_history: [],
@@ -75,13 +83,22 @@ const createMockClient = (url: string, key: string, options?: any) => {
         return { data: { user: mockUser }, error: null };
       },
       updateUser: async () => ({ error: null }),
-      resetPasswordForEmail: async () => ({ error: null }),
-      signOut: async () => { mockUser = null; return { error: null }; },
-      admin: { deleteUser: async () => ({ error: null }) }
+      admin: { 
+          deleteUser: async () => ({ error: null }),
+          updateUserById: async (uid: string, attributes: any) => {
+             console.log(`[模擬] 強制修改用戶 ${uid} 密碼為 ${attributes.password}`);
+             return { error: null };
+          }
+      }
     },
     from: (table: string) => ({
       select: (columns: string) => ({
-        order: () => ({ data: mockDb ? (mockDb[table] || []) : [], error: null }),
+        order: (col: string, { ascending }: any = {}) => {
+            const data = mockDb ? (mockDb[table] || []) : [];
+            // 簡單排序模擬
+            const sorted = [...data].sort((a,b) => ascending ? (a[col]>b[col]?1:-1) : (a[col]<b[col]?1:-1));
+            return { data: sorted, error: null };
+        },
         eq: (col: string, val: any) => ({
              order: () => {
                  const data = mockDb ? (mockDb[table] || []) : [];
@@ -128,13 +145,11 @@ const createMockClient = (url: string, key: string, options?: any) => {
 
 // --- 統一連線入口 ---
 const createClient = (url: string, key: string, options?: any) => {
-  // 如果 useMock 為 false，且 _createSupabaseClient 有定義 (已解除 import 註解)，則使用正式連線
   // @ts-ignore
   if (!useMock && typeof _createSupabaseClient !== 'undefined') {
       // @ts-ignore
       return _createSupabaseClient(url, key, options);
   }
-  // 否則使用模擬連線
   return createMockClient(url, key, options);
 };
 
@@ -152,9 +167,7 @@ const getSupabase = () => {
   if (url && key && !useMock) {
     return createClient(url, key);
   }
-  // 如果是模擬模式，回傳一個模擬的 client
   if (useMock) return createClient('mock', 'mock');
-  
   return null; 
 };
 
@@ -164,9 +177,10 @@ export default function RegistrationApp() {
   const [bulletins, setBulletins] = useState<any[]>([]);
   const [allUsers, setAllUsers] = useState<any[]>([]); 
   const [user, setUser] = useState<any>(null);
+  const [resetRequests, setResetRequests] = useState<any[]>([]); // [新增] 儲存申請列表
   
-  // 這裡使用 lazy init 避免 SSR 錯誤
   const supabase = getSupabase(); 
+  // 若 supabase 為 null，代表處於預覽模式，我們使用一個 local 的 mock client
   const client = useMemo(() => supabase || createClient('mock','mock'), [supabase]);
 
   const FAKE_DOMAIN = "@my-notes.com";
@@ -183,11 +197,11 @@ export default function RegistrationApp() {
   const [loading, setLoading] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   
-  const [isLoginMode, setIsLoginMode] = useState(true);
-  const [isForgotPwdMode, setIsForgotPwdMode] = useState(false);
-  const [forgotEmail, setForgotEmail] = useState('');
-
-  const [activeTab, setActiveTab] = useState<'form' | 'history' | 'admin_data' | 'admin_users' | 'admin_settings' | 'bulletin'>('bulletin');
+  // [修改] authMode 狀態: 'login', 'signup', 'forgot'
+  const [authMode, setAuthMode] = useState<'login' | 'signup' | 'forgot'>('login');
+  
+  // [修改] 新增 'admin_requests' 頁籤
+  const [activeTab, setActiveTab] = useState<'form' | 'history' | 'admin_data' | 'admin_users' | 'admin_settings' | 'admin_requests' | 'bulletin'>('bulletin');
   const [filterMonth, setFilterMonth] = useState('');
 
   const [bulletinText, setBulletinText] = useState('');
@@ -197,6 +211,9 @@ export default function RegistrationApp() {
   const [showPwdModal, setShowPwdModal] = useState(false);
   const [newPassword, setNewPassword] = useState('');
   const [pwdTargetUser, setPwdTargetUser] = useState<any>(null);
+
+  const [showApprovalModal, setShowApprovalModal] = useState(false); // [新增] 核准後顯示密碼的視窗
+  const [approvedResult, setApprovedResult] = useState<any>(null);
 
   const [addUserName, setAddUserName] = useState('');
   const [addUserLast4, setAddUserLast4] = useState('');
@@ -235,13 +252,13 @@ export default function RegistrationApp() {
   const handleLogout = useCallback(async () => {
     await client.auth.signOut();
     setUser(null); setNotes([]); setBulletins([]); setUsername(''); setIdLast4(''); setPassword('');
-    setIsAdmin(false); setIsLoginMode(true); setActiveTab('bulletin');
+    setIsAdmin(false); setAuthMode('login'); setActiveTab('bulletin');
   }, [client]);
 
   const checkUserStatus = useCallback(async (email: string) => {
       if (!email) return;
       try {
-          if (useMock) {
+          if (!supabase) {
              if (mockDb && mockDb.user_permissions) {
                const perm = mockDb.user_permissions.find((u:any) => u.email === email);
                if (perm) {
@@ -260,19 +277,18 @@ export default function RegistrationApp() {
       } catch (e) { console.error(e); }
   }, [supabase, client, handleLogout]);
 
-  // 讀取選項，不強制使用預設值
+  // 讀取選項
   const fetchOptions = useCallback(async () => {
     try {
       const { data: bigDataRaw } = await client.from('system_options').select('*').eq('category', 'team_big').order('created_at', { ascending: true });
       const bigData = bigDataRaw || [];
-      // 若 Mock 模式且 DB 空，才使用 MockData
-      const finalBig = (useMock && bigData.length === 0 && mockDb?.system_options) ? 
+      const finalBig = (!supabase && bigData.length === 0 && mockDb?.system_options) ? 
                        mockDb.system_options.filter((o:any)=>o.category==='team_big') : bigData;
       setTeamBigOptions(finalBig);
       
       const { data: smallDataRaw } = await client.from('system_options').select('*').eq('category', 'team_small').order('created_at', { ascending: true });
       const smallData = smallDataRaw || [];
-      const finalSmall = (useMock && smallData.length === 0 && mockDb?.system_options) ? 
+      const finalSmall = (!supabase && smallData.length === 0 && mockDb?.system_options) ? 
                          mockDb.system_options.filter((o:any)=>o.category==='team_small') : smallData;
       setTeamSmallOptions(finalSmall);
 
@@ -283,7 +299,7 @@ export default function RegistrationApp() {
     if (!client) return;
     const { data } = await client.from('bulletins').select('*').order('created_at', { ascending: false });
     if(data) setBulletins(data);
-    else if(useMock && mockDb?.bulletins) setBulletins(mockDb.bulletins);
+    else if(!supabase && mockDb?.bulletins) setBulletins(mockDb.bulletins);
     else setBulletins([]);
   }, [client, supabase]);
 
@@ -291,7 +307,7 @@ export default function RegistrationApp() {
     let pData: any[] = [];
     let nData: any[] = [];
 
-    if (useMock) {
+    if (!supabase) {
         pData = mockDb.user_permissions || [];
         nData = mockDb.notes || [];
     } else {
@@ -320,11 +336,20 @@ export default function RegistrationApp() {
     }
   }, [supabase]);
 
+  // [新增] 讀取重設申請列表
+  const fetchResetRequests = useCallback(async () => {
+    if (!client) return;
+    const { data } = await client.from('reset_requests').select('*').order('created_at', { ascending: false });
+    if (data) setResetRequests(data);
+    else if (!supabase && mockDb?.reset_requests) setResetRequests(mockDb.reset_requests);
+    else setResetRequests([]);
+  }, [client, supabase]);
+
   const fetchNotes = useCallback(async () => {
       if(!client) return;
       const { data } = await client.from('notes').select('*').order('start_date', { ascending: true }).order('start_time', { ascending: true });
       if(data) setNotes(data);
-      else if(useMock && mockDb?.notes) setNotes(mockDb.notes);
+      else if(!supabase && mockDb?.notes) setNotes(mockDb.notes);
       else setNotes([]);
   }, [client, supabase]);
 
@@ -349,7 +374,7 @@ export default function RegistrationApp() {
   const handleAddOption = async (category: string) => {
       if (!newOptionValue.trim()) return alert('請輸入名稱');
       setLoading(true);
-      if (!useMock) {
+      if (supabase) {
           const { error } = await client.from('system_options').insert([{ category, value: newOptionValue.trim() }]);
           if (error) alert('新增失敗'); else { setNewOptionValue(''); fetchOptions(); }
       } else {
@@ -361,7 +386,7 @@ export default function RegistrationApp() {
 
   const handleDeleteOption = async (id: number) => {
       if(!confirm('刪除?')) return;
-      if (!useMock) {
+      if (supabase) {
           const { error } = await client.from('system_options').delete().eq('id', id);
           if (error) alert('刪除失敗'); else fetchOptions();
       } else {
@@ -375,15 +400,14 @@ export default function RegistrationApp() {
     if (data.length === 0) return alert("無資料");
     const csvContent = "\ufeff" + ["大隊,小隊,精舍,姓名,身分證後四碼,法名,動作,開始日,開始時,結束日,結束時,協助,備註,登記時間,填表人,已刪除"].join(',') + '\n' + 
         data.map(n => `${n.team_big},${n.team_small},${n.monastery},${n.real_name},${n.id_2},${n.dharma_name},${n.action_type},${n.start_date},${n.start_time},${n.end_date},${n.end_time},${n.need_help?'是':'否'},"${(n.memo||'').replace(/"/g,'""')}",${n.created_at},${n.sign_name},${n.is_deleted?'是':''}`).join('\n');
-    const csvString = csvContent;
     const link = document.createElement('a');
-    link.href = URL.createObjectURL(new Blob([csvString], { type: 'text/csv;charset=utf-8;' }));
+    link.href = URL.createObjectURL(new Blob([csvContent], { type: 'text/csv;charset=utf-8;' }));
     link.download = 'export.csv';
     link.click();
   };
 
   const handleToggleUserDisabled = async (email: string, status: boolean) => {
-      if(!useMock) { 
+      if(supabase) { 
         const { error } = await client.from('user_permissions').update({ is_disabled: !status }).eq('email', email);
         if(!error) fetchAllUsers();
         else alert('更新失敗: ' + error.message);
@@ -405,7 +429,7 @@ export default function RegistrationApp() {
   const handlePostBulletin = async () => {
     if (!bulletinText && !bulletinImage) return alert('請輸入內容');
     setLoading(true);
-    if (!useMock) {
+    if (supabase) {
         const { error } = await supabase.from('bulletins').insert([{ content: bulletinText, image_url: bulletinImage }]);
         if (error) alert('失敗:' + error.message); else { alert('成功'); setBulletinText(''); setBulletinImage(''); fetchBulletins(); }
     } else {
@@ -418,7 +442,7 @@ export default function RegistrationApp() {
 
   const handleDeleteBulletin = async (id: number) => {
     if (!confirm('刪除?')) return;
-    if (!useMock) {
+    if (supabase) {
         const { error } = await supabase.from('bulletins').delete().eq('id', id);
         if (!error) { alert('已刪除'); fetchBulletins(); }
     }
@@ -427,7 +451,7 @@ export default function RegistrationApp() {
   const handleToggleDeleteNote = async (id: number, currentStatus: boolean) => {
     if (!currentStatus && !confirm('確定刪除?')) return;
     setLoading(true);
-    if (!useMock) {
+    if (supabase) {
         const { data, error } = await supabase.from('notes').update({ is_deleted: !currentStatus }).eq('id', id).select();
         const result = data || [];
         if (error || result.length === 0) alert('更新失敗或無權限 (請檢查 RLS)');
@@ -442,38 +466,148 @@ export default function RegistrationApp() {
     setLoading(false);
   };
 
+  // [修改] 密碼修改與重設邏輯
   const handleChangePassword = async () => {
     if (!newPassword || newPassword.length < 6) return alert('至少6碼');
     if (useMock) return alert('預覽模式無法修改');
     
+    setLoading(true);
     if (pwdTargetUser === 'SELF') {
+      // 1. 修改自己
       const { error } = await supabase.auth.updateUser({ password: newPassword });
       if (error) alert(error.message); else alert('成功');
     } else {
-      const { error } = await supabase.auth.resetPasswordForEmail(pwdTargetUser.email);
-      if (error) alert('發送重設信失敗: ' + error.message);
-      else alert(`已發送重設密碼信件至 ${pwdTargetUser.email}`);
+      // 2. 管理員重設他人
+      // 需要使用 Service Role Key
+      const serviceRoleKey = process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY;
+      
+      if (!serviceRoleKey) {
+          alert('請先在 Vercel 設定 NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY 環境變數，才能啟用強制重設功能。');
+          setLoading(false);
+          return;
+      }
+
+      // 建立一個擁有超級權限的 client
+      // @ts-ignore
+      const adminClient = createClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL!,
+          serviceRoleKey,
+          { auth: { persistSession: false } }
+      );
+
+      const { error } = await adminClient.auth.admin.updateUserById(
+          pwdTargetUser.uid, 
+          { password: newPassword }
+      );
+
+      if (error) alert('重設失敗: ' + error.message);
+      else alert(`已強制重設 ${pwdTargetUser.display_name} 的密碼！`);
     }
+    setLoading(false);
     setShowPwdModal(false);
   };
 
-  const handleForgotPassword = async () => {
-    if (!forgotEmail) return alert('請輸入您的 Email');
-    if (useMock) return alert('預覽模式無法發送重設信');
-    
+  // [新增] 處理密碼重設申請 (使用者端)
+  const handleRequestReset = async () => {
+    if (!username || !idLast4) return alert('請輸入完整資訊');
     setLoading(true);
-    const { error } = await supabase.auth.resetPasswordForEmail(forgotEmail, {
-        redirectTo: typeof window !== 'undefined' ? window.location.href : undefined,
-    });
-    
-    if (error) {
-        alert('發送失敗: ' + error.message);
-    } else {
-        alert(`已發送重設信至 ${forgotEmail}。\n請查收信件並點擊連結重設密碼。`);
-        setIsForgotPwdMode(false);
-        setForgotEmail('');
+
+    try {
+      // 1. 先確認該用戶是否存在 (Mock 或 Supabase)
+      let targetUser = null;
+      if (supabase) {
+        const { data } = await client.from('user_permissions').select('*').eq('user_name', username).eq('id_last4', idLast4).single();
+        targetUser = data;
+      } else if (mockDb && mockDb.user_permissions) {
+        targetUser = mockDb.user_permissions.find((u:any) => u.user_name === username && u.id_last4 === idLast4);
+      }
+
+      if (!targetUser) {
+        // 為了安全，也可以選擇不提示 "找不到用戶"，但內部系統方便為主
+        alert('找不到此用戶，請檢查姓名與 ID 後 4 碼是否正確。');
+        setLoading(false);
+        return;
+      }
+
+      // 2. 建立申請
+      const newRequest = {
+         user_name: username,
+         id_last4: idLast4,
+         uid: targetUser.uid,
+         status: 'pending',
+      };
+
+      if (supabase) {
+         const { error } = await client.from('reset_requests').insert([newRequest]);
+         if(error) throw error;
+      } else {
+         if(!mockDb.reset_requests) mockDb.reset_requests = [];
+         mockDb.reset_requests.push({ ...newRequest, id: Date.now(), created_at: new Date().toISOString() });
+      }
+
+      alert('申請已送出！請通知管理員/主管進行審核。');
+      setAuthMode('login'); // 回到登入頁
+      setUsername(''); setIdLast4(''); setPassword('');
+
+    } catch (e: any) {
+      console.error(e);
+      alert('申請失敗: ' + e.message);
     }
     setLoading(false);
+  };
+
+  // [新增] 處理審核批准 (管理員端)
+  const handleApproveReset = async (request: any) => {
+    if (!confirm(`確定要批准 ${request.user_name} 的重設申請嗎？\n系統將生成一組隨機密碼。`)) return;
+    
+    // 產生 6 位數隨機密碼
+    const tempPassword = Math.floor(100000 + Math.random() * 900000).toString();
+    setLoading(true);
+
+    try {
+        // 1. 修改密碼 (Mock / Real)
+        if (useMock) {
+           console.log(`[模擬] 用戶 ${request.uid} 密碼已改為 ${tempPassword}`);
+        } else {
+           const serviceRoleKey = process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY;
+           if (!serviceRoleKey) {
+             alert('請設定 NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY 環境變數。');
+             setLoading(false);
+             return;
+           }
+           // @ts-ignore
+           const adminClient = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceRoleKey, { auth: { persistSession: false } });
+           const { error } = await adminClient.auth.admin.updateUserById(request.uid, { password: tempPassword });
+           if(error) throw error;
+        }
+
+        // 2. 更新申請狀態
+        if (supabase) {
+           await client.from('reset_requests').update({ status: 'completed' }).eq('id', request.id);
+        } else {
+           mockDb.reset_requests = mockDb.reset_requests.map((r:any) => r.id === request.id ? { ...r, status: 'completed' } : r);
+        }
+
+        // 3. 顯示結果
+        setApprovedResult({ name: request.user_name, pwd: tempPassword });
+        setShowApprovalModal(true);
+        fetchResetRequests(); // 重新整理列表
+
+    } catch(e: any) {
+        alert('重設失敗: ' + e.message);
+    }
+    setLoading(false);
+  };
+
+  // [新增] 駁回申請
+  const handleRejectReset = async (id: number) => {
+      if(!confirm('確定駁回?')) return;
+      if (supabase) {
+          await client.from('reset_requests').update({ status: 'rejected' }).eq('id', id);
+      } else {
+          mockDb.reset_requests = mockDb.reset_requests.map((r:any) => r.id === id ? { ...r, status: 'rejected' } : r);
+      }
+      fetchResetRequests();
   };
 
   const handleAdminAddUser = async () => {
@@ -482,7 +616,7 @@ export default function RegistrationApp() {
      
      setLoading(true);
 
-     if (!useMock && supabase) {
+     if (supabase && process.env.NEXT_PUBLIC_SUPABASE_URL) {
          try {
              // @ts-ignore
              if (typeof createSupabaseClient !== 'function' || createSupabaseClient.toString().includes('return {}')) {
@@ -534,7 +668,7 @@ export default function RegistrationApp() {
     if(!user) return;
     if(formData.start_date < minStartDate) return alert('日期錯誤');
     const signName = `${getDisplayNameOnly(user.email||'')} (${getIdLast4FromEmail(user.email||'')})`;
-    if(!useMock) {
+    if(supabase) {
         const { error } = await client.from('notes').insert([{...formData, user_id: user.id, id_2: getIdLast4FromEmail(user.email||''), sign_name: signName }]);
         if(!error) { alert('成功'); window.location.reload(); }
         else alert('失敗');
@@ -583,12 +717,13 @@ export default function RegistrationApp() {
       if (isAdmin) {
           if (activeTab === 'admin_users') fetchAllUsers();
           if (activeTab === 'admin_settings') fetchOptions();
+          if (activeTab === 'admin_requests') fetchResetRequests(); // [新增]
       }
-  }, [activeTab, isAdmin, fetchAllUsers, fetchOptions]);
+  }, [activeTab, isAdmin, fetchAllUsers, fetchOptions, fetchResetRequests]);
 
   useEffect(() => {
     const init = async () => {
-        if (useMock) return;
+        if (!supabase) return;
         const { data: { user } } = await supabase.auth.getUser();
         setUser(user);
         if(user) {
@@ -616,42 +751,41 @@ export default function RegistrationApp() {
 
   return (
     <div className="min-h-screen bg-amber-50 flex flex-col items-center py-10 px-4 font-sans text-gray-900">
-      <h1 className="text-3xl font-bold text-amber-900 mb-8 tracking-wide">一一報名系統 (v2.8)</h1>
+      <h1 className="text-3xl font-bold text-amber-900 mb-8 tracking-wide">一一報名系統 (v3.0)</h1>
 
       {!user ? (
         <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-sm border border-amber-200">
           <h2 className="text-xl font-bold mb-6 text-center text-gray-700">
-            {isForgotPwdMode ? '重設密碼' : (isLoginMode ? '使用者登入' : '註冊新帳號')}
+            {authMode === 'login' ? '登入' : authMode === 'signup' ? '註冊' : '忘記密碼申請'}
           </h2>
+          
+          <div className="space-y-4">
+            <input className="w-full p-3 border rounded" placeholder="姓名" value={username} onChange={e=>setUsername(e.target.value)} />
+            <input className="w-full p-3 border rounded" placeholder="ID後四碼" maxLength={4} value={idLast4} onChange={e=>setIdLast4(e.target.value)} />
+            
+            {/* 只有登入和註冊需要密碼 */}
+            {authMode !== 'forgot' && (
+              <input className="w-full p-3 border rounded" type="password" placeholder="密碼" value={password} onChange={e=>setPassword(e.target.value)} />
+            )}
+          </div>
 
-          {isForgotPwdMode ? (
-              <div className="space-y-4">
-                  <p className="text-sm text-gray-500 mb-4">請輸入您註冊時的電子信箱 (系統自動產生規則：轉碼後的Email)，系統將發送重設信給您。</p>
-                  <input className="w-full p-3 border rounded" placeholder="請輸入 Email (例如: xxxx@my-notes.com)" value={forgotEmail} onChange={e=>setForgotEmail(e.target.value)} />
-                  <div className="mt-6 flex flex-col gap-2">
-                     <button onClick={handleForgotPassword} disabled={loading} className="w-full bg-blue-600 text-white py-3 rounded">{loading ? '發送中...' : '發送重設信'}</button>
-                     <button onClick={() => setIsForgotPwdMode(false)} className="text-sm text-gray-500 underline text-center">返回登入</button>
-                  </div>
-              </div>
-          ) : (
-              <>
-                <div className="space-y-4">
-                    <input className="w-full p-3 border rounded" placeholder="姓名" value={username} onChange={e=>setUsername(e.target.value)} />
-                    <input className="w-full p-3 border rounded" placeholder="ID後四碼" maxLength={4} value={idLast4} onChange={e=>setIdLast4(e.target.value)} />
-                    <input className="w-full p-3 border rounded" type="password" placeholder="密碼" value={password} onChange={e=>setPassword(e.target.value)} />
-                </div>
-                <div className="mt-6 flex flex-col gap-2">
-                    <button onClick={isLoginMode ? handleLogin : handleSignUp} className="w-full bg-amber-700 text-white py-3 rounded">{isLoginMode ? '登入' : '註冊'}</button>
-                    
-                    <div className="flex justify-between mt-2">
-                        <button onClick={() => setIsLoginMode(!isLoginMode)} className="text-sm text-gray-500 underline">{isLoginMode ? '沒有帳號？註冊' : '已有帳號？登入'}</button>
-                        {isLoginMode && (
-                            <button onClick={() => setIsForgotPwdMode(true)} className="text-sm text-blue-500 underline">忘記密碼？</button>
-                        )}
-                    </div>
-                </div>
-              </>
-          )}
+          <div className="mt-6 flex flex-col gap-2">
+             {authMode === 'login' && <button onClick={handleLogin} className="w-full bg-amber-700 text-white py-3 rounded">登入</button>}
+             {authMode === 'signup' && <button onClick={handleSignUp} className="w-full bg-amber-700 text-white py-3 rounded">註冊</button>}
+             {authMode === 'forgot' && <button onClick={handleRequestReset} className="w-full bg-red-600 hover:bg-red-700 text-white py-3 rounded font-bold">送出重設申請</button>}
+             
+             <div className="flex justify-between text-sm mt-2">
+               {authMode === 'login' ? (
+                 <>
+                   <button onClick={() => setAuthMode('signup')} className="text-gray-500 underline">沒有帳號？註冊</button>
+                   <button onClick={() => setAuthMode('forgot')} className="text-blue-600 underline">忘記密碼？</button>
+                 </>
+               ) : (
+                 <button onClick={() => setAuthMode('login')} className="text-gray-500 underline w-full text-center">返回登入</button>
+               )}
+             </div>
+          </div>
+          {authMode === 'forgot' && <p className="mt-4 text-xs text-center text-gray-400">送出後，請通知主管審核並取得新密碼</p>}
         </div>
       ) : (
         <div className="w-full max-w-6xl animate-fade-in">
@@ -678,8 +812,12 @@ export default function RegistrationApp() {
              {['bulletin','form','history'].map(t => (
                  <button key={t} onClick={()=>setActiveTab(t as any)} className={`flex-1 py-3 px-2 rounded-md ${activeTab===t?'bg-white shadow-sm text-black font-bold':'text-amber-600'}`}>{t==='bulletin'?'公告':t==='form'?'報名':'紀錄'}</button>
              ))}
-             {isAdmin && ['admin_data','admin_users','admin_settings'].map(t => (
-                 <button key={t} onClick={()=>setActiveTab(t as any)} className={`flex-1 py-3 px-2 rounded-md ${activeTab===t?'bg-white shadow-sm text-blue-800 font-bold':'text-blue-600'}`}>{t==='admin_data'?'資料':t==='admin_users'?'用戶':'設定'}</button>
+             {isAdmin && ['admin_data','admin_users','admin_requests','admin_settings'].map(t => (
+                 <button key={t} onClick={()=>setActiveTab(t as any)} className={`flex-1 py-3 px-2 rounded-md ${activeTab===t?'bg-white shadow-sm text-blue-800 font-bold':'text-blue-600'}`}>
+                    {t==='admin_data'?'資料':t==='admin_users'?'用戶':t==='admin_requests'?'審核':'設定'}
+                    {/* 紅點提示: 如果有 pending 的申請 (簡易模擬) */}
+                    {t==='admin_requests' && resetRequests.some(r=>r.status==='pending') && <span className="ml-1 text-xs text-red-500">●</span>}
+                 </button>
              ))}
            </div>
 
@@ -768,6 +906,51 @@ export default function RegistrationApp() {
                  </table>
               </div>
            )}
+           
+           {/* [新增] 密碼重設審核面板 */}
+           {activeTab === 'admin_requests' && isAdmin && (
+               <div className="bg-white p-6 rounded shadow">
+                   <h3 className="font-bold mb-4">密碼重設申請</h3>
+                   <div className="text-sm text-gray-500 mb-4 bg-yellow-50 p-2 rounded border border-yellow-200">
+                       說明：點擊「批准」後，系統將產生一組隨機密碼並更新該用戶的登入密碼。請將新密碼口頭告知用戶。
+                   </div>
+                   
+                   <table className="w-full text-sm text-left">
+                       <thead className="bg-gray-50">
+                           <tr>
+                               <th className="p-2">申請人姓名</th>
+                               <th className="p-2">ID後4碼</th>
+                               <th className="p-2">申請時間</th>
+                               <th className="p-2">狀態</th>
+                               <th className="p-2">操作</th>
+                           </tr>
+                       </thead>
+                       <tbody>
+                           {resetRequests.map(r => (
+                               <tr key={r.id} className="border-b">
+                                   <td className="p-2 font-bold">{r.user_name}</td>
+                                   <td className="p-2">{r.id_last4}</td>
+                                   <td className="p-2 text-gray-500">{new Date(r.created_at).toLocaleDateString()}</td>
+                                   <td className="p-2">
+                                       <span className={`px-2 py-0.5 rounded text-xs ${r.status==='pending'?'bg-orange-100 text-orange-800':r.status==='completed'?'bg-green-100 text-green-800':'bg-red-100 text-red-800'}`}>
+                                           {r.status === 'pending' ? '待審核' : r.status === 'completed' ? '已完成' : '已駁回'}
+                                       </span>
+                                   </td>
+                                   <td className="p-2">
+                                       {r.status === 'pending' && (
+                                           <div className="flex gap-2">
+                                               <button onClick={() => handleApproveReset(r)} className="bg-blue-600 text-white px-3 py-1 rounded text-xs hover:bg-blue-700">批准重設</button>
+                                               <button onClick={() => handleRejectReset(r.id)} className="bg-gray-200 text-gray-700 px-3 py-1 rounded text-xs hover:bg-gray-300">駁回</button>
+                                           </div>
+                                       )}
+                                   </td>
+                               </tr>
+                           ))}
+                           {resetRequests.length === 0 && <tr><td colSpan={5} className="p-4 text-center text-gray-400">目前沒有申請</td></tr>}
+                       </tbody>
+                   </table>
+               </div>
+           )}
 
            {activeTab === 'admin_users' && isAdmin && (
               <div className="bg-white p-6 rounded shadow">
@@ -780,7 +963,6 @@ export default function RegistrationApp() {
                        <button onClick={handleAdminAddUser} className="bg-blue-600 text-white px-3 py-1 rounded text-sm">新增</button>
                     </div>
                  </div>
-                 {/* 使用者管理列表 */}
                  <table className="w-full text-sm text-left">
                     <thead className="bg-gray-50">
                         <tr>
@@ -820,29 +1002,48 @@ export default function RegistrationApp() {
              <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
                 <div className="bg-white p-6 rounded shadow-lg w-full max-w-sm">
                    <h3 className="font-bold mb-4">
-                      {pwdTargetUser === 'SELF' ? '修改我的密碼' : '發送密碼重設信'}
+                      {pwdTargetUser === 'SELF' ? '修改我的密碼' : '重設使用者密碼'}
                    </h3>
                    
-                   {pwdTargetUser === 'SELF' ? (
-                       <>
-                         <input type="password" placeholder="請輸入新密碼 (至少6碼)" className="w-full border p-2 mb-4 rounded" value={newPassword} onChange={e => setNewPassword(e.target.value)} />
-                         <div className="text-xs text-gray-500 mb-4">將立即更新您的登入密碼。</div>
-                       </>
-                   ) : (
-                       <div className="mb-4 text-sm text-gray-600">
-                          <p className="mb-2">您正在為 <strong>{pwdTargetUser?.display_name}</strong> 重設密碼。</p>
-                          <p>基於安全性限制，系統將發送一封<strong>密碼重設信</strong>至該使用者的信箱，請通知使用者收信並設定新密碼。</p>
-                       </div>
-                   )}
+                   <p className="mb-4 text-sm text-gray-600">
+                      對象：<strong>{pwdTargetUser?.display_name}</strong>
+                      {pwdTargetUser !== 'SELF' && <br/>}
+                      {pwdTargetUser !== 'SELF' && <span className="text-xs text-red-500">* 此操作將直接修改使用者的登入密碼</span>}
+                   </p>
+
+                   <input type="password" placeholder="請輸入新密碼 (至少6碼)" className="w-full border p-2 mb-4 rounded" value={newPassword} onChange={e => setNewPassword(e.target.value)} />
 
                    <div className="flex justify-end gap-2">
                        <button onClick={() => setShowPwdModal(false)} className="px-4 py-2 bg-gray-200 rounded">取消</button>
                        <button onClick={handleChangePassword} className="px-4 py-2 bg-blue-600 text-white rounded">
-                           {pwdTargetUser === 'SELF' ? '確認修改' : '發送重設信'}
+                           確認修改
                        </button>
                    </div>
                 </div>
              </div>
+           )}
+           
+           {/* [新增] 批准成功後顯示新密碼的視窗 */}
+           {showApprovalModal && approvedResult && (
+               <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-[60]">
+                   <div className="bg-white p-8 rounded-xl shadow-2xl w-full max-w-sm border-2 border-green-500 text-center animate-bounce-in">
+                       <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                           <span className="text-3xl">✅</span>
+                       </div>
+                       <h3 className="text-2xl font-bold text-gray-800 mb-2">重設成功！</h3>
+                       <p className="text-gray-600 mb-4">
+                           用戶 <strong>{approvedResult.name}</strong> 的密碼已更新。
+                       </p>
+                       <div className="bg-gray-100 p-4 rounded-lg border border-gray-300 mb-4">
+                           <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">新臨時密碼</p>
+                           <p className="text-3xl font-mono font-bold text-blue-600 tracking-widest select-all">{approvedResult.pwd}</p>
+                       </div>
+                       <p className="text-sm text-red-500 mb-6 font-medium">請立即告知用戶，並要求其登入後修改密碼。</p>
+                       <button onClick={() => setShowApprovalModal(false)} className="w-full bg-green-600 text-white py-3 rounded-lg font-bold hover:bg-green-700 transition">
+                           我已告知用戶，關閉視窗
+                       </button>
+                   </div>
+               </div>
            )}
 
         </div>
