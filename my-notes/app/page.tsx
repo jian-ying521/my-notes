@@ -45,9 +45,9 @@ let mockUser: any = null;
 let mockDb: any = {
   notes: [
       { id: 1, team_big: '觀音隊', team_small: '第1小隊', monastery: '台北', real_name: 'admin', dharma_name: '寬明', action_type: '新增', start_date: '2023-10-01', start_time: '08:00', end_date: '2023-10-01', end_time: '12:00', need_help: true, memo: '模擬資料', id_2: '1111', sign_name: 'admin (1111)', is_deleted: false, created_at: new Date('2023-10-01T08:00:00').toISOString(), user_id: 'user-1' },
-      { id: 2, team_big: '普賢隊', team_small: '第2小隊', monastery: '台中', real_name: 'admin', dharma_name: '寬明', action_type: '異動', start_date: '2023-10-02', start_time: '14:00', end_date: '2023-10-02', end_time: '17:00', need_help: false, memo: '測試卡片顯示', id_2: '1111', sign_name: 'admin (1111)', is_deleted: false, created_at: new Date('2023-10-02T09:00:00').toISOString(), user_id: 'user-1' }
+      { id: 2, team_big: '普賢隊', team_small: '第2小隊', monastery: '台中', real_name: 'admin', dharma_name: '寬明', action_type: '異動', start_date: '2023-10-02', start_time: '14:00', end_date: '2023-10-04', end_time: '17:00', need_help: false, memo: '測試多日行程', id_2: '1111', sign_name: 'admin (1111)', is_deleted: false, created_at: new Date('2023-10-02T09:00:00').toISOString(), user_id: 'user-1' }
   ],
-  bulletins: [{ id: 1, content: '🎉 歡迎使用一一報名系統 (v3.1)！我們更新了介面。', image_url: '', created_at: new Date().toISOString() }],
+  bulletins: [{ id: 1, content: '🎉 歡迎使用一一報名系統 (v3.2)！資料列表已更新。', image_url: '', created_at: new Date().toISOString() }],
   user_permissions: [
       { id: 1, email: 'admin@example.com', uid: 'user-1', is_admin: true, is_disabled: false, user_name: 'admin', id_last4: '1111', created_at: new Date().toISOString() },
       { id: 2, email: 'user@example.com', uid: 'user-2', is_admin: false, is_disabled: false, user_name: '王小明', id_last4: '5566', created_at: new Date().toISOString() }
@@ -206,6 +206,18 @@ const getDisplayNameOnly = (email: string) => {
 };
 const getIdLast4FromEmail = (email: string) => {
     const fullName = decodeName(email); return (fullName.length > 4 && !isNaN(Number(fullName.slice(-4)))) ? fullName.slice(-4) : '';
+};
+
+// [新增] 計算發心日數 helper function
+const calculateDuration = (start: string, end: string) => {
+    if (!start || !end) return '-';
+    const d1 = new Date(start);
+    const d2 = new Date(end);
+    // 計算毫秒差，轉為天數
+    const diffTime = d2.getTime() - d1.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+    // 規則：迄日 - 起日 + 1
+    return diffDays + 1;
 };
 
 export default function RegistrationApp() {
@@ -389,8 +401,12 @@ export default function RegistrationApp() {
   const exportToExcel = () => {
     const data = filterMonth ? notes.filter(n => n.start_date.startsWith(filterMonth)) : notes;
     if (data.length === 0) return alert("無資料");
-    const csvContent = "\ufeff" + ["大隊,小隊,精舍,姓名,身分證後四碼,法名,動作,開始日,開始時,結束日,結束時,協助,備註,登記時間,填表人,已刪除"].join(',') + '\n' + 
-        data.map(n => `${n.team_big},${n.team_small},${n.monastery},${n.real_name},${n.id_2},${n.dharma_name},${n.action_type},${n.start_date},${n.start_time},${n.end_date},${n.end_time},${n.need_help?'是':'否'},"${(n.memo||'').replace(/"/g,'""')}",${n.created_at},${n.sign_name},${n.is_deleted?'是':''}`).join('\n');
+    // [修改] Excel 匯出欄位增加 發心起日/時、發心迄日/時、發心日數
+    const csvContent = "\ufeff" + ["大隊,小隊,精舍,姓名,身分證後四碼,法名,動作,發心起日,發心起時,發心迄日,發心迄時,發心日數,協助,備註,登記時間,填表人,已刪除"].join(',') + '\n' + 
+        data.map(n => {
+            const days = calculateDuration(n.start_date, n.end_date);
+            return `${n.team_big},${n.team_small},${n.monastery},${n.real_name},${n.id_2},${n.dharma_name},${n.action_type},${n.start_date},${n.start_time},${n.end_date},${n.end_time},${days},${n.need_help?'是':'否'},"${(n.memo||'').replace(/"/g,'""')}",${n.created_at},${n.sign_name},${n.is_deleted?'是':''}`;
+        }).join('\n');
     const link = document.createElement('a');
     link.href = URL.createObjectURL(new Blob([csvContent], { type: 'text/csv;charset=utf-8;' }));
     link.download = 'export.csv';
@@ -666,7 +682,7 @@ export default function RegistrationApp() {
     <div className="min-h-screen bg-amber-50 flex flex-col items-center py-10 px-4 font-sans text-gray-900">
       <h1 className="text-3xl font-extrabold text-amber-900 mb-8 tracking-wide flex items-center gap-3">
         <Shield className="w-8 h-8 text-amber-600" />
-        一一報名系統 (v3.1)
+        一一報名系統 (v3.2)
       </h1>
 
       {!user ? (
@@ -915,13 +931,42 @@ export default function RegistrationApp() {
                  </div>
                  <div className="overflow-x-auto">
                    <table className="w-full text-sm text-left">
-                      <thead className="bg-gray-50 text-gray-600"><tr><th className="p-3 rounded-l-lg">大隊</th><th className="p-3">姓名</th><th className="p-3">日期</th><th className="p-3 rounded-r-lg">填表人</th></tr></thead>
+                      <thead className="bg-gray-50 text-gray-600">
+                        <tr>
+                          <th className="p-3 rounded-l-lg">大隊</th>
+                          <th className="p-3">姓名</th>
+                          {/* [修改] 原本的「日期」欄位拆分為：發心起日/時、發心迄日/時、發心日數 */}
+                          <th className="p-3">發心起日/時</th>
+                          <th className="p-3">發心迄日/時</th>
+                          <th className="p-3">發心日數</th>
+                          <th className="p-3 rounded-r-lg">填表人</th>
+                        </tr>
+                      </thead>
                       <tbody className="divide-y divide-gray-100">
                         {notes.map(n=>(
                           <tr key={n.id} className="hover:bg-gray-50/50 transition-colors">
                             <td className="p-3 font-medium text-gray-800">{n.team_big}</td>
                             <td className="p-3">{n.real_name}</td>
-                            <td className="p-3 text-gray-500">{n.start_date}</td>
+                            
+                            {/* [新增] 顯示起日與時間 */}
+                            <td className="p-3 text-gray-600">
+                              <div className="font-medium">{n.start_date}</div>
+                              <div className="text-xs text-gray-400">{n.start_time}</div>
+                            </td>
+                            
+                            {/* [新增] 顯示迄日與時間 */}
+                            <td className="p-3 text-gray-600">
+                              <div className="font-medium">{n.end_date}</div>
+                              <div className="text-xs text-gray-400">{n.end_time}</div>
+                            </td>
+                            
+                            {/* [新增] 顯示計算後的天數 */}
+                            <td className="p-3 text-center">
+                              <span className="bg-amber-100 text-amber-800 px-2 py-1 rounded font-bold text-xs">
+                                {calculateDuration(n.start_date, n.end_date)} 天
+                              </span>
+                            </td>
+
                             <td className="p-3 text-blue-500 font-mono text-xs">{n.sign_name}</td>
                           </tr>
                         ))}
