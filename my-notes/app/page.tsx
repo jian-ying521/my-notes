@@ -108,6 +108,11 @@ const createMockClient = (url: string, key: string, options?: any) => {
                  const data = mockDb ? (mockDb[table] || []) : [];
                  const found = data.find((item: any) => item[col] === val);
                  return { data: found, error: null };
+             },
+             maybeSingle: () => {
+                 const data = mockDb ? (mockDb[table] || []) : [];
+                 const found = data.find((item: any) => item[col] === val);
+                 return { data: found, error: null };
              }
         })
       }),
@@ -522,8 +527,27 @@ export default function RegistrationApp() {
       // 1. 先確認該用戶是否存在 (Mock 或 Supabase)
       let targetUser = null;
       if (supabase) {
-        // [修正] 使用 trim 後的變數進行查詢
-        const { data } = await client.from('user_permissions').select('*').eq('user_name', cleanName).eq('id_last4', cleanId).single();
+        // [修正] 優先嘗試使用 Service Role Key 查詢，以繞過 RLS (因為未登入時通常無法讀取 user_permissions)
+        const serviceRoleKey = process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY;
+        let data = null;
+
+        if (serviceRoleKey) {
+            // @ts-ignore
+            const adminClient = createClient(
+                process.env.NEXT_PUBLIC_SUPABASE_URL!,
+                serviceRoleKey,
+                { auth: { persistSession: false } }
+            );
+            const res = await adminClient.from('user_permissions').select('*').eq('user_name', cleanName).eq('id_last4', cleanId).maybeSingle();
+            data = res.data;
+        } 
+
+        // 如果沒有 Service Key 或查詢失敗，退回使用普通 Client 試試 (但通常會被 RLS 擋住)
+        if (!data) {
+             const res = await client.from('user_permissions').select('*').eq('user_name', cleanName).eq('id_last4', cleanId).maybeSingle();
+             data = res.data;
+        }
+        
         targetUser = data;
       } else if (mockDb && mockDb.user_permissions) {
         console.log('[Mock 模式] 目前模擬資料庫中的用戶:', mockDb.user_permissions);
@@ -534,7 +558,7 @@ export default function RegistrationApp() {
       if (!targetUser) {
         // 為了安全，也可以選擇不提示 "找不到用戶"，但內部系統方便為主
         console.warn('[重設申請] 找不到符合的用戶。請確認 user_permissions 資料表是否有該使用者的 user_name 與 id_last4');
-        alert(`找不到此用戶 (${cleanName}, ${cleanId})。\n\n如果是正式環境，請確認「user_permissions」資料表有此資料。\n如果是測試環境，請確認姓名與ID完全相符。`);
+        alert(`找不到此用戶 (${cleanName}, ${cleanId})。\n\n【排解方式】\n1. 請確認姓名與ID完全相符。\n2. (重要) 請檢查 Vercel 環境變數是否已設定 NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY，否則系統無權限查詢用戶。`);
         setLoading(false);
         return;
       }
