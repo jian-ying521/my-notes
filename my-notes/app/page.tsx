@@ -3,17 +3,18 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 
 // ==========================================
-// [⚠️ 部署 Vercel 必讀]
-// 1. 請確保有安裝: npm install @supabase/supabase-js
-// 2. 解除下方 import 的註解。
-// 3. 刪除下方 [預覽用替代定義] 的區塊。
-// 4. 確保 Vercel 環境變數有設定 URL 和 ANON_KEY。
+// [⚠️ Vercel 部署設定指南]
+// 1. 確保 package.json 有: npm install @supabase/supabase-js
+// 2. [關鍵步驟] 部署前，請將下方第 15 行的註解解除 (// import ...)
+// 3. [關鍵步驟] 將第 27 行的 `useMock = true` 改為 `useMock = false`
 // ==========================================
 
-// [步驟 1] 部署到 Vercel 時，請解除下方這一行的註解
-// import { createClient as createSupabaseClient } from '@supabase/supabase-js';
-import { createClient as createSupabaseClient } from '@supabase/supabase-js';
-
+// [步驟 1] 部署時，請解除下一行的註解：
+// import { createClient as _createSupabaseClient } from '@supabase/supabase-js';
+import { createClient as _createSupabaseClient } from '@supabase/supabase-js';
+// --- 設定控制開關 ---
+// [步驟 2] 部署時，請將 true 改為 false
+const useMock = false; 
 
 // --- 全域變數宣告 ---
 let mockUser: any = null;
@@ -36,17 +37,8 @@ let mockDb: any = {
   ]
 };
 
-// --- [正式連線函式] (部署時請解除註解) ---
-/*
-const createClient = (url: string, key: string, options?: any) => {
-  return createSupabaseClient(url, key, options);
-};
-*/
-const createClient = (url: string, key: string, options?: any) => {
-  return createSupabaseClient(url, key, options);
-};
-// --- [模擬連線函式] (部署時請刪除或註解此區塊) ---
-const createClient = (url: string, key: string, options?: any) => {
+// --- 模擬客戶端邏輯 (請勿更動) ---
+const createMockClient = (url: string, key: string, options?: any) => {
   return {
     auth: {
       getUser: async () => ({ data: { user: mockUser } }),
@@ -134,6 +126,18 @@ const createClient = (url: string, key: string, options?: any) => {
   } as any;
 };
 
+// --- 統一連線入口 ---
+const createClient = (url: string, key: string, options?: any) => {
+  // 如果 useMock 為 false，且 _createSupabaseClient 有定義 (已解除 import 註解)，則使用正式連線
+  // @ts-ignore
+  if (!useMock && typeof _createSupabaseClient !== 'undefined') {
+      // @ts-ignore
+      return _createSupabaseClient(url, key, options);
+  }
+  // 否則使用模擬連線
+  return createMockClient(url, key, options);
+};
+
 // --- Helper Functions ---
 const getSupabase = () => {
   let url = '';
@@ -145,9 +149,12 @@ const getSupabase = () => {
     }
   } catch (e) { }
 
-  if (url && key && !url.includes('your-project')) {
+  if (url && key && !useMock) {
     return createClient(url, key);
   }
+  // 如果是模擬模式，回傳一個模擬的 client
+  if (useMock) return createClient('mock', 'mock');
+  
   return null; 
 };
 
@@ -158,6 +165,7 @@ export default function RegistrationApp() {
   const [allUsers, setAllUsers] = useState<any[]>([]); 
   const [user, setUser] = useState<any>(null);
   
+  // 這裡使用 lazy init 避免 SSR 錯誤
   const supabase = getSupabase(); 
   const client = useMemo(() => supabase || createClient('mock','mock'), [supabase]);
 
@@ -176,8 +184,6 @@ export default function RegistrationApp() {
   const [isAdmin, setIsAdmin] = useState(false);
   
   const [isLoginMode, setIsLoginMode] = useState(true);
-  
-  // [新增] 忘記密碼模式
   const [isForgotPwdMode, setIsForgotPwdMode] = useState(false);
   const [forgotEmail, setForgotEmail] = useState('');
 
@@ -221,7 +227,6 @@ export default function RegistrationApp() {
 
   useEffect(() => {
     const d = new Date(); 
-    d.setDate(d.getDate() + 1);
     const dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
     setMinStartDate(dateStr);
   }, []);
@@ -236,7 +241,7 @@ export default function RegistrationApp() {
   const checkUserStatus = useCallback(async (email: string) => {
       if (!email) return;
       try {
-          if (!supabase) {
+          if (useMock) {
              if (mockDb && mockDb.user_permissions) {
                const perm = mockDb.user_permissions.find((u:any) => u.email === email);
                if (perm) {
@@ -255,18 +260,19 @@ export default function RegistrationApp() {
       } catch (e) { console.error(e); }
   }, [supabase, client, handleLogout]);
 
-  // 讀取選項
+  // 讀取選項，不強制使用預設值
   const fetchOptions = useCallback(async () => {
     try {
       const { data: bigDataRaw } = await client.from('system_options').select('*').eq('category', 'team_big').order('created_at', { ascending: true });
       const bigData = bigDataRaw || [];
-      const finalBig = (!supabase && bigData.length === 0 && mockDb?.system_options) ? 
+      // 若 Mock 模式且 DB 空，才使用 MockData
+      const finalBig = (useMock && bigData.length === 0 && mockDb?.system_options) ? 
                        mockDb.system_options.filter((o:any)=>o.category==='team_big') : bigData;
       setTeamBigOptions(finalBig);
       
       const { data: smallDataRaw } = await client.from('system_options').select('*').eq('category', 'team_small').order('created_at', { ascending: true });
       const smallData = smallDataRaw || [];
-      const finalSmall = (!supabase && smallData.length === 0 && mockDb?.system_options) ? 
+      const finalSmall = (useMock && smallData.length === 0 && mockDb?.system_options) ? 
                          mockDb.system_options.filter((o:any)=>o.category==='team_small') : smallData;
       setTeamSmallOptions(finalSmall);
 
@@ -277,7 +283,7 @@ export default function RegistrationApp() {
     if (!client) return;
     const { data } = await client.from('bulletins').select('*').order('created_at', { ascending: false });
     if(data) setBulletins(data);
-    else if(!supabase && mockDb?.bulletins) setBulletins(mockDb.bulletins);
+    else if(useMock && mockDb?.bulletins) setBulletins(mockDb.bulletins);
     else setBulletins([]);
   }, [client, supabase]);
 
@@ -285,7 +291,7 @@ export default function RegistrationApp() {
     let pData: any[] = [];
     let nData: any[] = [];
 
-    if (!supabase) {
+    if (useMock) {
         pData = mockDb.user_permissions || [];
         nData = mockDb.notes || [];
     } else {
@@ -318,7 +324,7 @@ export default function RegistrationApp() {
       if(!client) return;
       const { data } = await client.from('notes').select('*').order('start_date', { ascending: true }).order('start_time', { ascending: true });
       if(data) setNotes(data);
-      else if(!supabase && mockDb?.notes) setNotes(mockDb.notes);
+      else if(useMock && mockDb?.notes) setNotes(mockDb.notes);
       else setNotes([]);
   }, [client, supabase]);
 
@@ -343,7 +349,7 @@ export default function RegistrationApp() {
   const handleAddOption = async (category: string) => {
       if (!newOptionValue.trim()) return alert('請輸入名稱');
       setLoading(true);
-      if (supabase) {
+      if (!useMock) {
           const { error } = await client.from('system_options').insert([{ category, value: newOptionValue.trim() }]);
           if (error) alert('新增失敗'); else { setNewOptionValue(''); fetchOptions(); }
       } else {
@@ -355,7 +361,7 @@ export default function RegistrationApp() {
 
   const handleDeleteOption = async (id: number) => {
       if(!confirm('刪除?')) return;
-      if (supabase) {
+      if (!useMock) {
           const { error } = await client.from('system_options').delete().eq('id', id);
           if (error) alert('刪除失敗'); else fetchOptions();
       } else {
@@ -377,7 +383,7 @@ export default function RegistrationApp() {
   };
 
   const handleToggleUserDisabled = async (email: string, status: boolean) => {
-      if(supabase) { 
+      if(!useMock) { 
         const { error } = await client.from('user_permissions').update({ is_disabled: !status }).eq('email', email);
         if(!error) fetchAllUsers();
         else alert('更新失敗: ' + error.message);
@@ -399,7 +405,7 @@ export default function RegistrationApp() {
   const handlePostBulletin = async () => {
     if (!bulletinText && !bulletinImage) return alert('請輸入內容');
     setLoading(true);
-    if (supabase) {
+    if (!useMock) {
         const { error } = await supabase.from('bulletins').insert([{ content: bulletinText, image_url: bulletinImage }]);
         if (error) alert('失敗:' + error.message); else { alert('成功'); setBulletinText(''); setBulletinImage(''); fetchBulletins(); }
     } else {
@@ -412,7 +418,7 @@ export default function RegistrationApp() {
 
   const handleDeleteBulletin = async (id: number) => {
     if (!confirm('刪除?')) return;
-    if (supabase) {
+    if (!useMock) {
         const { error } = await supabase.from('bulletins').delete().eq('id', id);
         if (!error) { alert('已刪除'); fetchBulletins(); }
     }
@@ -421,7 +427,7 @@ export default function RegistrationApp() {
   const handleToggleDeleteNote = async (id: number, currentStatus: boolean) => {
     if (!currentStatus && !confirm('確定刪除?')) return;
     setLoading(true);
-    if (supabase) {
+    if (!useMock) {
         const { data, error } = await supabase.from('notes').update({ is_deleted: !currentStatus }).eq('id', id).select();
         const result = data || [];
         if (error || result.length === 0) alert('更新失敗或無權限 (請檢查 RLS)');
@@ -438,22 +444,22 @@ export default function RegistrationApp() {
 
   const handleChangePassword = async () => {
     if (!newPassword || newPassword.length < 6) return alert('至少6碼');
-    if (!supabase) return alert('預覽模式無法修改');
+    if (useMock) return alert('預覽模式無法修改');
+    
     if (pwdTargetUser === 'SELF') {
       const { error } = await supabase.auth.updateUser({ password: newPassword });
       if (error) alert(error.message); else alert('成功');
     } else {
       const { error } = await supabase.auth.resetPasswordForEmail(pwdTargetUser.email);
       if (error) alert('發送重設信失敗: ' + error.message);
-      else alert(`已發送重設密碼信件至 ${pwdTargetUser.email}。\n請使用者至信箱查收並設定新密碼。`);
+      else alert(`已發送重設密碼信件至 ${pwdTargetUser.email}`);
     }
     setShowPwdModal(false);
   };
 
-  // [新增] 發送忘記密碼信件
   const handleForgotPassword = async () => {
     if (!forgotEmail) return alert('請輸入您的 Email');
-    if (!supabase) return alert('預覽模式無法發送重設信');
+    if (useMock) return alert('預覽模式無法發送重設信');
     
     setLoading(true);
     const { error } = await supabase.auth.resetPasswordForEmail(forgotEmail, {
@@ -476,7 +482,7 @@ export default function RegistrationApp() {
      
      setLoading(true);
 
-     if (supabase && process.env.NEXT_PUBLIC_SUPABASE_URL) {
+     if (!useMock && supabase) {
          try {
              // @ts-ignore
              if (typeof createSupabaseClient !== 'function' || createSupabaseClient.toString().includes('return {}')) {
@@ -528,7 +534,7 @@ export default function RegistrationApp() {
     if(!user) return;
     if(formData.start_date < minStartDate) return alert('日期錯誤');
     const signName = `${getDisplayNameOnly(user.email||'')} (${getIdLast4FromEmail(user.email||'')})`;
-    if(supabase) {
+    if(!useMock) {
         const { error } = await client.from('notes').insert([{...formData, user_id: user.id, id_2: getIdLast4FromEmail(user.email||''), sign_name: signName }]);
         if(!error) { alert('成功'); window.location.reload(); }
         else alert('失敗');
@@ -542,7 +548,7 @@ export default function RegistrationApp() {
   };
 
   const handleLogin = async () => {
-    if (!supabase) { // Mock login
+    if (useMock) { // Mock login
         const email = encodeName(username+idLast4) + FAKE_DOMAIN;
         setUser({ email, id: 'mock-user' });
         checkUserStatus(email);
@@ -558,7 +564,7 @@ export default function RegistrationApp() {
   };
 
   const handleSignUp = async () => {
-      if (!supabase) return alert('預覽模式無法註冊');
+      if (useMock) return alert('預覽模式無法註冊');
       const email = encodeName(username+idLast4) + FAKE_DOMAIN;
       const { data, error } = await supabase.auth.signUp({ 
           email, 
@@ -582,7 +588,7 @@ export default function RegistrationApp() {
 
   useEffect(() => {
     const init = async () => {
-        if (!supabase) return;
+        if (useMock) return;
         const { data: { user } } = await supabase.auth.getUser();
         setUser(user);
         if(user) {
@@ -604,13 +610,13 @@ export default function RegistrationApp() {
     setShowPwdModal(true);
   };
 
-  if (!supabase) {
+  if (!supabase && !useMock) {
       return <div className="p-10 text-center text-red-500 font-bold">⚠️ 系統未連接資料庫。請在 Vercel 設定環境變數。</div>;
   }
 
   return (
     <div className="min-h-screen bg-amber-50 flex flex-col items-center py-10 px-4 font-sans text-gray-900">
-      <h1 className="text-3xl font-bold text-amber-900 mb-8 tracking-wide">一一報名系統 (v2.7)</h1>
+      <h1 className="text-3xl font-bold text-amber-900 mb-8 tracking-wide">一一報名系統 (v2.8)</h1>
 
       {!user ? (
         <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-sm border border-amber-200">
@@ -619,7 +625,6 @@ export default function RegistrationApp() {
           </h2>
 
           {isForgotPwdMode ? (
-              // 忘記密碼表單
               <div className="space-y-4">
                   <p className="text-sm text-gray-500 mb-4">請輸入您註冊時的電子信箱 (系統自動產生規則：轉碼後的Email)，系統將發送重設信給您。</p>
                   <input className="w-full p-3 border rounded" placeholder="請輸入 Email (例如: xxxx@my-notes.com)" value={forgotEmail} onChange={e=>setForgotEmail(e.target.value)} />
@@ -629,7 +634,6 @@ export default function RegistrationApp() {
                   </div>
               </div>
           ) : (
-              // 登入/註冊表單
               <>
                 <div className="space-y-4">
                     <input className="w-full p-3 border rounded" placeholder="姓名" value={username} onChange={e=>setUsername(e.target.value)} />
