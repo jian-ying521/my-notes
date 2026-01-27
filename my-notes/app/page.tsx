@@ -36,7 +36,6 @@ import {
 // [步驟 1] 部署到 Vercel 時，請解除下方這一行的註解
 // import { createClient as _createSupabaseClient } from '@supabase/supabase-js';
 import { createClient as _createSupabaseClient } from '@supabase/supabase-js';
-
 // --- 設定控制開關 ---
 // [步驟 2] 部署時，請將 true 改為 false
 const useMock = false; 
@@ -244,6 +243,7 @@ const getNoteStatus = (note: any) => {
     return note.action_type === '新增' ? 'new' : 'modified';
 };
 
+// [修正] 將 TabButton 移出主元件，避免重複渲染導致失去焦點或點擊失效
 const TabButton = ({ id, label, icon: Icon, active, onClick, hasNotification }: any) => (
   <button 
     type="button"
@@ -269,6 +269,7 @@ export default function RegistrationApp() {
   const [allUsers, setAllUsers] = useState<any[]>([]); 
   const [user, setUser] = useState<any>(null);
   const [resetRequests, setResetRequests] = useState<any[]>([]); 
+  const [sortedNotes, setSortedNotes] = useState<any[]>([]);
   
   const FAKE_DOMAIN = "@my-notes.com";
 
@@ -317,12 +318,17 @@ export default function RegistrationApp() {
     setMinStartDate(dateStr);
   }, []);
 
-  // [新增] 排序邏輯：發心日時 (升冪)，但已刪除/已圓滿排至最後
-  const sortedNotes = useMemo(() => {
+  // [修正] 將排序邏輯放入 useEffect，避免 prerendering 時的 new Date() 錯誤
+  useEffect(() => {
+    if (!notes || notes.length === 0) {
+      setSortedNotes([]);
+      return;
+    }
+
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    return [...notes].sort((a, b) => {
+    const sorted = [...notes].sort((a, b) => {
       const statusA = getNoteStatus(a);
       const statusB = getNoteStatus(b);
       
@@ -339,6 +345,7 @@ export default function RegistrationApp() {
       const dateB = new Date(`${b.start_date}T${b.start_time || '00:00'}`);
       return dateA.getTime() - dateB.getTime();
     });
+    setSortedNotes(sorted);
   }, [notes]);
 
   const logToHistory = useCallback(async (action: string, targetUser: any) => {
@@ -461,7 +468,6 @@ export default function RegistrationApp() {
   };
 
   const exportToExcel = () => {
-    // [修改] 匯出時也應用排序邏輯
     const data = filterMonth ? sortedNotes.filter(n => n.start_date.startsWith(filterMonth)) : sortedNotes;
     
     if (data.length === 0) return alert("無資料");
