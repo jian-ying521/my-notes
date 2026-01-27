@@ -58,7 +58,7 @@ let mockDb: any = {
       { id: 101, user_name: '王小明', id_last4: '5566', uid: 'user-2', status: 'pending', created_at: new Date().toISOString() }
   ],
   users: [],
-  login_history: [], // [新增] 用於儲存登入/登出/註冊紀錄
+  login_history: [],
   system_options: [
     { id: 1, category: 'team_big', value: '觀音隊' }, { id: 2, category: 'team_big', value: '文殊隊' },
     { id: 3, category: 'team_big', value: '普賢隊' }, { id: 4, category: 'team_big', value: '地藏隊' }, { id: 5, category: 'team_big', value: '彌勒隊' },
@@ -196,7 +196,6 @@ const createSupabaseInstance = () => {
   return createMockClient('mock', 'mock');
 };
 
-// --- Helper Functions ---
 const encodeName = (name: string) => {
     try { let hex = ''; for (let i = 0; i < name.length; i++) hex += ('0000' + name.charCodeAt(i).toString(16)).slice(-4); return hex; } catch { return name; }
 };
@@ -219,7 +218,6 @@ const calculateDuration = (start: string, end: string) => {
     return diffDays + 1;
 };
 
-// [新增] 日期格式化 helper (YYYY/MM/DD - HH:MM)
 const formatDateTime = (isoString: string) => {
     if (!isoString) return '-';
     try {
@@ -234,23 +232,6 @@ const formatDateTime = (isoString: string) => {
         return isoString;
     }
 };
-
-// [修正] 將 TabButton 移出主元件，避免重複渲染導致失去焦點或點擊失效
-const TabButton = ({ id, label, icon: Icon, active, onClick, hasNotification }: any) => (
-  <button 
-    type="button"
-    onClick={onClick}
-    className={`flex-1 flex items-center justify-center space-x-2 py-3 px-2 rounded-lg transition-all duration-200 ${
-      active 
-        ? 'bg-white shadow-md text-amber-700 font-bold border border-amber-100' 
-        : 'text-amber-600 hover:bg-amber-100 hover:text-amber-800'
-    }`}
-  >
-    <Icon className={`w-4 h-4 ${active ? 'stroke-2' : 'stroke-[1.5]'}`} />
-    <span className="text-sm md:text-base">{label}</span>
-    {hasNotification && <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse ml-1" />}
-  </button>
-);
 
 export default function RegistrationApp() {
   const supabase = useMemo(() => createSupabaseInstance(), []);
@@ -309,37 +290,19 @@ export default function RegistrationApp() {
     setMinStartDate(dateStr);
   }, []);
 
-  // [新增] 寫入歷程記錄的共用函式 (useCallback 包覆以確保穩定)
   const logToHistory = useCallback(async (action: string, targetUser: any) => {
       if (!targetUser) return;
       const name = getDisplayNameOnly(targetUser.email || '');
       const uid = targetUser.id;
-      
-      const payload = {
-          uid: uid,
-          user_name: name,
-          action: action,
-          created_at: new Date().toISOString()
-      };
-
+      const payload = { uid: uid, user_name: name, action: action, created_at: new Date().toISOString() };
       try {
-          if (!useMock) {
-              await client.from('login_history').insert([payload]);
-          } else {
-              if (!mockDb.login_history) mockDb.login_history = [];
-              mockDb.login_history.push({ ...payload, id: Date.now() });
-              console.log(`[Log] ${action}: ${name} (${uid})`);
-          }
-      } catch (e) {
-          console.error('Log failed:', e);
-      }
+          if (!useMock) { await client.from('login_history').insert([payload]); } 
+          else { if (!mockDb.login_history) mockDb.login_history = []; mockDb.login_history.push({ ...payload, id: Date.now() }); console.log(`[Log] ${action}: ${name} (${uid})`); }
+      } catch (e) { console.error('Log failed:', e); }
   }, [client]);
 
-  // Actions
   const handleLogout = useCallback(async () => {
-    // [修改] 登出前記錄
     if (user) await logToHistory('登出', user);
-    
     await supabase.auth.signOut();
     setUser(null); setNotes([]); setBulletins([]); setUsername(''); setIdLast4(''); setPassword('');
     setIsAdmin(false); setAuthMode('login'); setActiveTab('bulletin');
@@ -351,18 +314,12 @@ export default function RegistrationApp() {
           if (useMock) {
              if (mockDb && mockDb.user_permissions) {
                const perm = mockDb.user_permissions.find((u:any) => u.email === email);
-               if (perm) {
-                   if (perm.is_disabled) { alert('帳號已禁用'); await handleLogout(); return; }
-                   setIsAdmin(perm.is_admin);
-               }
+               if (perm) { if (perm.is_disabled) { alert('帳號已禁用'); await handleLogout(); return; } setIsAdmin(perm.is_admin); }
              }
              return;
           }
           const { data } = await supabase.from('user_permissions').select('is_admin, is_disabled').eq('email', email).single();
-          if (data) {
-              if (data.is_disabled) { alert('帳號已禁用'); await handleLogout(); return; }
-              setIsAdmin(data.is_admin === true);
-          }
+          if (data) { if (data.is_disabled) { alert('帳號已禁用'); await handleLogout(); return; } setIsAdmin(data.is_admin === true); }
       } catch (e) { console.error(e); }
   }, [supabase, handleLogout]);
 
@@ -370,14 +327,11 @@ export default function RegistrationApp() {
     try {
       const { data: bigDataRaw } = await supabase.from('system_options').select('*').eq('category', 'team_big').order('created_at', { ascending: true });
       const bigData = bigDataRaw || [];
-      const finalBig = (useMock && bigData.length === 0 && mockDb?.system_options) ? 
-                       mockDb.system_options.filter((o:any)=>o.category==='team_big') : bigData;
+      const finalBig = (useMock && bigData.length === 0 && mockDb?.system_options) ? mockDb.system_options.filter((o:any)=>o.category==='team_big') : bigData;
       setTeamBigOptions(finalBig);
-      
       const { data: smallDataRaw } = await supabase.from('system_options').select('*').eq('category', 'team_small').order('created_at', { ascending: true });
       const smallData = smallDataRaw || [];
-      const finalSmall = (useMock && smallData.length === 0 && mockDb?.system_options) ? 
-                         mockDb.system_options.filter((o:any)=>o.category==='team_small') : smallData;
+      const finalSmall = (useMock && smallData.length === 0 && mockDb?.system_options) ? mockDb.system_options.filter((o:any)=>o.category==='team_small') : smallData;
       setTeamSmallOptions(finalSmall);
     } catch (e) { console.error(e); }
   }, [supabase]);
@@ -392,14 +346,10 @@ export default function RegistrationApp() {
   const fetchAllUsers = useCallback(async () => {
     let pData: any[] = [];
     let nData: any[] = [];
-    if (useMock) {
-        pData = mockDb.user_permissions || [];
-        nData = mockDb.notes || [];
-    } else {
+    if (useMock) { pData = mockDb.user_permissions || []; nData = mockDb.notes || []; } else {
         const { data: p } = await supabase.from('user_permissions').select('*').order('created_at', { ascending: false });
         const { data: n } = await supabase.from('notes').select('sign_name, real_name, dharma_name, id_2');
-        pData = p || [];
-        nData = n || [];
+        pData = p || []; nData = n || [];
     }
     if (pData) {
        setAllUsers(pData.map((u: any) => {
@@ -462,7 +412,6 @@ export default function RegistrationApp() {
   const exportToExcel = () => {
     const data = filterMonth ? notes.filter(n => n.start_date.startsWith(filterMonth)) : notes;
     if (data.length === 0) return alert("無資料");
-    // [修改] Excel 匯出欄位增加 發心起日/時、發心迄日/時、發心日數
     const csvContent = "\ufeff" + ["大隊,小隊,精舍,姓名,身分證後四碼,法名,動作,發心起日,發心起時,發心迄日,發心迄時,發心日數,協助,備註,登記時間,填表人,已刪除"].join(',') + '\n' + 
         data.map(n => {
             const days = calculateDuration(n.start_date, n.end_date);
@@ -485,19 +434,12 @@ export default function RegistrationApp() {
       }
   };
 
-  // [新增] 切換用戶管理員權限
   const handleToggleUserAdmin = async (email: string, currentStatus: boolean) => {
-      // 安全檢查：不能取消自己的管理員權限
-      if (user?.email === email && currentStatus === true) {
-          return alert('為避免系統鎖死，您不能取消自己的管理員權限。');
-      }
-
+      if (user?.email === email && currentStatus === true) return alert('為避免系統鎖死，您不能取消自己的管理員權限。');
       if (!confirm(`確定要${currentStatus ? '取消' : '設定'}此用戶的管理員權限嗎？`)) return;
-
       if (!useMock) {
           const { error } = await supabase.from('user_permissions').update({ is_admin: !currentStatus }).eq('email', email);
-          if (!error) fetchAllUsers();
-          else alert('更新失敗: ' + error.message);
+          if (!error) fetchAllUsers(); else alert('更新失敗: ' + error.message);
       } else {
           mockDb.user_permissions = mockDb.user_permissions.map((u: any) => u.email === email ? { ...u, is_admin: !currentStatus } : u);
           fetchAllUsers();
@@ -562,7 +504,6 @@ export default function RegistrationApp() {
           if (error) throw error;
           else { alert('修改成功！'); setShowPwdModal(false); }
         } else {
-          // 管理員重設他人
           if (useMock) {
                console.log('[Mock] Admin reset password');
                alert(`已強制重設 ${pwdTargetUser.display_name} 的密碼！`);
@@ -668,9 +609,6 @@ export default function RegistrationApp() {
              else { 
                  alert(`使用者 ${addUserName} 已建立！`); 
                  setAddUserName(''); setAddUserLast4(''); setAddUserPwd(''); 
-                 // [新增] 記錄新增用戶操作 (雖然這是註冊行為，但由管理員觸發)
-                 // 注意：這裡無法輕易取得新使用者的 uid 作為 log 的 target，除非 API 回傳
-                 // 但我們至少可以記錄 "當前管理員" 執行了 "新增用戶"
                  fetchAllUsers(); 
              }
          } catch(e:any) { alert('執行錯誤: ' + e.message); }
@@ -702,8 +640,6 @@ export default function RegistrationApp() {
 
   const handleLogin = async () => {
     const email = encodeName(username+idLast4) + FAKE_DOMAIN;
-    
-    // [修正] 統一使用 signInWithPassword，Mock Client 也有實作此方法且邏輯更完整 (會查對應 ID)
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     
     if(error) {
@@ -711,15 +647,7 @@ export default function RegistrationApp() {
     } else {
         setUser(data.user);
         setFormData(p => ({...p, real_name: username}));
-        
-        // [新增] 登入成功後立即讀取資料，不需要重新整理
-        fetchNotes();
-        fetchBulletins();
-        fetchOptions();
-        
-        checkUserStatus(email);
-
-        // [新增] 寫入登入歷程
+        fetchNotes(); fetchBulletins(); fetchOptions(); checkUserStatus(email);
         logToHistory('登入', data.user);
     }
   };
@@ -728,10 +656,7 @@ export default function RegistrationApp() {
       if (useMock) return alert('預覽模式無法註冊');
       const email = encodeName(username+idLast4) + FAKE_DOMAIN;
       const { data, error } = await supabase.auth.signUp({ email, password, options: { data: { display_name: username, id_last4: idLast4 } } });
-      if(error) {
-          alert(error.message); 
-      } else { 
-          // [新增] 寫入註冊歷程
+      if(error) { alert(error.message); } else { 
           logToHistory('註冊', data.user);
           alert('註冊成功！'); 
           window.location.reload(); 
@@ -766,20 +691,22 @@ export default function RegistrationApp() {
       return <div className="p-10 text-center text-red-500 font-bold">⚠️ 系統未連接資料庫。請在 Vercel 設定環境變數。</div>;
   }
 
-  // Icons mapping for tabs
-  const TabButton = ({ id, label, icon: Icon, active, onClick, hasNotification }: any) => (
-    <button 
-      onClick={onClick}
-      className={`flex-1 flex items-center justify-center space-x-2 py-3 px-2 rounded-lg transition-all duration-200 ${
-        active 
-          ? 'bg-white shadow-md text-amber-700 font-bold border border-amber-100' 
-          : 'text-amber-600 hover:bg-amber-100 hover:text-amber-800'
-      }`}
-    >
-      <Icon className={`w-4 h-4 ${active ? 'stroke-2' : 'stroke-[1.5]'}`} />
-      <span className="text-sm md:text-base">{label}</span>
-      {hasNotification && <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse ml-1" />}
-    </button>
+  // [修正] Helper function for rendering tabs to ensure stability and correct click handling
+  const renderTab = (id: any, label: string, Icon: any, hasNotification = false) => (
+      <button 
+        key={id}
+        type="button"
+        onClick={() => setActiveTab(id)}
+        className={`flex-1 flex items-center justify-center space-x-2 py-3 px-2 rounded-lg transition-all duration-200 cursor-pointer select-none relative z-10 ${
+          activeTab === id 
+            ? 'bg-white shadow-md text-amber-700 font-bold border border-amber-100 transform scale-105' 
+            : 'text-amber-600 hover:bg-amber-100 hover:text-amber-800'
+        }`}
+      >
+        <Icon className={`w-4 h-4 ${activeTab === id ? 'stroke-2' : 'stroke-[1.5]'}`} />
+        <span className="text-sm md:text-base">{label}</span>
+        {hasNotification && <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse ml-1" />}
+      </button>
   );
 
   return (
@@ -863,18 +790,18 @@ export default function RegistrationApp() {
            </div>
            
            {/* Tabs */}
-           <div className="flex flex-wrap gap-2 mb-6 bg-amber-200/50 p-1.5 rounded-xl w-full">
-             <TabButton id="bulletin" label="公告" icon={Bell} active={activeTab === 'bulletin'} onClick={() => setActiveTab('bulletin')} />
-             <TabButton id="form" label="報名" icon={Edit} active={activeTab === 'form'} onClick={() => setActiveTab('form')} />
-             <TabButton id="history" label="紀錄" icon={History} active={activeTab === 'history'} onClick={() => setActiveTab('history')} />
+           <div className="flex flex-wrap gap-2 mb-6 bg-amber-200/50 p-1.5 rounded-xl w-full relative z-10">
+             {renderTab('bulletin', '公告', Bell)}
+             {renderTab('form', '報名', Edit)}
+             {renderTab('history', '紀錄', History)}
              
              {isAdmin && (
                <>
                  <div className="w-px bg-amber-300 mx-1 hidden md:block"></div>
-                 <TabButton id="admin_data" label="資料" icon={FileText} active={activeTab === 'admin_data'} onClick={() => setActiveTab('admin_data')} />
-                 <TabButton id="admin_users" label="用戶" icon={Users} active={activeTab === 'admin_users'} onClick={() => setActiveTab('admin_users')} />
-                 <TabButton id="admin_requests" label="審核" icon={Shield} active={activeTab === 'admin_requests'} onClick={() => setActiveTab('admin_requests')} hasNotification={resetRequests.some(r=>r.status==='pending')} />
-                 <TabButton id="admin_settings" label="設定" icon={Settings} active={activeTab === 'admin_settings'} onClick={() => setActiveTab('admin_settings')} />
+                 {renderTab('admin_data', '資料', FileText)}
+                 {renderTab('admin_users', '用戶', Users)}
+                 {renderTab('admin_requests', '審核', Shield, resetRequests.some(r=>r.status==='pending'))}
+                 {renderTab('admin_settings', '設定', Settings)}
                </>
              )}
            </div>
@@ -958,7 +885,6 @@ export default function RegistrationApp() {
            {activeTab === 'history' && (
              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {notes.filter(n => n.user_id === user.id).map(n => {
-                   // [新增] 判斷是否已過期 (小於今日)
                    const today = new Date();
                    today.setHours(0,0,0,0);
                    const endDate = new Date(n.end_date);
@@ -985,7 +911,6 @@ export default function RegistrationApp() {
                         </div>
 
                         <div className="flex justify-end items-center pt-2 border-t border-gray-100 mt-2">
-                           {/* [確認移除] 這裡已經沒有填表人欄位，只剩刪除按鈕 */}
                            <label className="flex items-center gap-1 cursor-pointer text-xs font-bold text-red-500 hover:bg-red-50 px-2 py-1 rounded transition-colors">
                              <input type="checkbox" className="accent-red-500" checked={n.is_deleted} onChange={() => handleToggleDeleteNote(n.id, n.is_deleted)} /> 
                              刪除
@@ -1050,9 +975,9 @@ export default function RegistrationApp() {
                       <thead className="bg-gray-50 text-gray-600">
                         <tr>
                           <th className="p-3 rounded-l-lg">大隊</th>
-                          <th className="p-3">小隊</th> {/* [新增] 小隊欄位 */}
+                          <th className="p-3">小隊</th>
                           <th className="p-3">姓名</th>
-                          <th className="p-3">法名</th> {/* [新增] 法名欄位 */}
+                          <th className="p-3">法名</th>
                           <th className="p-3">發心起日/時</th>
                           <th className="p-3">發心迄日/時</th>
                           <th className="p-3">發心日數</th>
@@ -1063,9 +988,9 @@ export default function RegistrationApp() {
                         {notes.map(n=>(
                           <tr key={n.id} className="hover:bg-gray-50/50 transition-colors">
                             <td className="p-3 font-medium text-gray-800">{n.team_big}</td>
-                            <td className="p-3 text-gray-600">{n.team_small}</td> {/* [新增] 顯示小隊資料 */}
+                            <td className="p-3 text-gray-600">{n.team_small}</td>
                             <td className="p-3">{n.real_name}</td>
-                            <td className="p-3 text-gray-600">{n.dharma_name || '-'}</td> {/* [新增] 顯示法名 */}
+                            <td className="p-3 text-gray-600">{n.dharma_name || '-'}</td>
                             
                             <td className="p-3 text-gray-600">
                               <div className="font-medium">{n.start_date}</div>
@@ -1107,7 +1032,6 @@ export default function RegistrationApp() {
                            <tr>
                                <th className="p-3 rounded-l-lg">申請人</th>
                                <th className="p-3">ID後4碼</th>
-                               {/* [修改] 標題改為 申請時間 */}
                                <th className="p-3">申請時間</th>
                                <th className="p-3">狀態</th>
                                <th className="p-3 rounded-r-lg">操作</th>
@@ -1118,7 +1042,6 @@ export default function RegistrationApp() {
                                <tr key={r.id} className="hover:bg-gray-50">
                                    <td className="p-3 font-bold text-gray-800">{r.user_name}</td>
                                    <td className="p-3 font-mono text-gray-500">{r.id_last4}</td>
-                                   {/* [修改] 使用新的 formatDateTime 函式顯示時間 */}
                                    <td className="p-3 text-xs text-gray-400 font-mono">{formatDateTime(r.created_at)}</td>
                                    <td className="p-3">
                                        <span className={`px-2.5 py-1 rounded-full text-xs font-bold border ${
