@@ -14,7 +14,6 @@ import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 // import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 
-
 // --- 全域變數宣告 ---
 let mockUser: any = null;
 let mockDb: any = {
@@ -104,7 +103,6 @@ export default function RegistrationApp() {
   const [addUserLast4, setAddUserLast4] = useState('');
   const [addUserPwd, setAddUserPwd] = useState('');
 
-  // [修正] 日期限制改用 state，避免 Build error
   const [minStartDate, setMinStartDate] = useState('');
 
   const [formData, setFormData] = useState({
@@ -128,18 +126,17 @@ export default function RegistrationApp() {
   };
   const isExpired = (d: string, t: string) => { if(!d) return false; return new Date(`${d}T${t||'23:59:59'}`) < new Date(); };
 
-  // [修正] 將日期計算移至 useEffect，避免 Next.js Build Error
   useEffect(() => {
+    // 設定最小起始日期為「今天」
     const d = new Date(); 
-    d.setDate(d.getDate() + 1);
+    // d.setDate(d.getDate() + 1); // 原本是 +1 (明天)，現在改為當天
     const dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
     setMinStartDate(dateStr);
   }, []);
 
-  // === 3. 資料讀取函式 (Fetch Functions) ===
-
+  // === Actions (Functions) ===
   const handleLogout = useCallback(async () => {
-    if (client) await client.auth.signOut();
+    await client.auth.signOut();
     setUser(null); setNotes([]); setBulletins([]); setUsername(''); setIdLast4(''); setPassword('');
     setIsAdmin(false); setIsLoginMode(true); setActiveTab('bulletin');
   }, [client]);
@@ -148,7 +145,6 @@ export default function RegistrationApp() {
       if (!email) return;
       try {
           if (!supabase) {
-             // Mock Mode Check
              if (mockDb && mockDb.user_permissions) {
                const perm = mockDb.user_permissions.find((u:any) => u.email === email);
                if (perm) {
@@ -174,14 +170,12 @@ export default function RegistrationApp() {
       const finalBig = (!supabase && bigData.length === 0 && mockDb?.system_options) ? 
                        mockDb.system_options.filter((o:any)=>o.category==='team_big') : bigData;
       setTeamBigOptions(finalBig);
-      // [修正] 移除強制預設值，讓使用者自己選
       
       const { data: smallDataRaw } = await client.from('system_options').select('*').eq('category', 'team_small').order('created_at', { ascending: true });
       const smallData = smallDataRaw || [];
       const finalSmall = (!supabase && smallData.length === 0 && mockDb?.system_options) ? 
                          mockDb.system_options.filter((o:any)=>o.category==='team_small') : smallData;
       setTeamSmallOptions(finalSmall);
-      // [修正] 移除強制預設值
 
     } catch (e) { console.error(e); }
   }, [client, supabase]);
@@ -189,9 +183,8 @@ export default function RegistrationApp() {
   const fetchBulletins = useCallback(async () => {
     if (!client) return;
     const { data } = await client.from('bulletins').select('*').order('created_at', { ascending: false });
-    // [修正] 加入 || [] 避免 null 賦值給 array
     if(data) setBulletins(data);
-    else if (!supabase && mockDb?.bulletins) setBulletins(mockDb.bulletins);
+    else if(!supabase && mockDb?.bulletins) setBulletins(mockDb.bulletins);
     else setBulletins([]);
   }, [client, supabase]);
 
@@ -236,11 +229,8 @@ export default function RegistrationApp() {
       else setNotes([]);
   }, [client, supabase]);
 
-  // === 4. 操作函式 (Handlers) ===
-
   const handleInitializeDefaults = async () => {
       if (!confirm('確定要匯入預設選項嗎？')) return;
-      if (!supabase) return;
       setLoading(true);
       const defaultBig = ['觀音隊', '文殊隊', '普賢隊', '地藏隊', '彌勒隊'];
       const defaultSmall = ['第1小隊', '第2小隊', '第3小隊', '第4小隊', '第5小隊'];
@@ -248,7 +238,7 @@ export default function RegistrationApp() {
           ...defaultBig.map(v => ({ category: 'team_big', value: v })),
           ...defaultSmall.map(v => ({ category: 'team_small', value: v }))
       ];
-      const { error } = await supabase.from('system_options').insert(insertPayload);
+      const { error } = await client.from('system_options').insert(insertPayload);
       if (error) alert('匯入失敗：' + error.message);
       else {
           alert('預設選項匯入成功！');
@@ -261,9 +251,8 @@ export default function RegistrationApp() {
       if (!newOptionValue.trim()) return alert('請輸入名稱');
       setLoading(true);
       if (supabase) {
-          const { error } = await supabase.from('system_options').insert([{ category, value: newOptionValue.trim() }]);
-          if (error) alert('新增失敗: ' + error.message);
-          else { setNewOptionValue(''); fetchOptions(); }
+          const { error } = await client.from('system_options').insert([{ category, value: newOptionValue.trim() }]);
+          if (error) alert('新增失敗'); else { setNewOptionValue(''); fetchOptions(); }
       } else {
           mockDb.system_options.push({id: Date.now(), category, value: newOptionValue.trim()});
           setNewOptionValue(''); fetchOptions();
@@ -274,7 +263,7 @@ export default function RegistrationApp() {
   const handleDeleteOption = async (id: number) => {
       if(!confirm('刪除?')) return;
       if (supabase) {
-          const { error } = await supabase.from('system_options').delete().eq('id', id);
+          const { error } = await client.from('system_options').delete().eq('id', id);
           if (error) alert('刪除失敗'); else fetchOptions();
       } else {
          mockDb.system_options = mockDb.system_options.filter((o:any)=>o.id!==id); 
@@ -294,10 +283,14 @@ export default function RegistrationApp() {
   };
 
   const handleToggleUserDisabled = async (email: string, status: boolean) => {
-      if(!supabase) return;
-      const { error } = await supabase.from('user_permissions').update({ is_disabled: !status }).eq('email', email);
-      if(!error) fetchAllUsers();
-      else alert('更新失敗: ' + error.message);
+      if(supabase) { 
+        const { error } = await client.from('user_permissions').update({ is_disabled: !status }).eq('email', email);
+        if(!error) fetchAllUsers();
+        else alert('更新失敗: ' + error.message);
+      } else {
+         mockDb.user_permissions = mockDb.user_permissions.map((u:any)=>u.email===email ? {...u, is_disabled: !status} : u);
+         fetchAllUsers();
+      }
   };
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -419,10 +412,13 @@ export default function RegistrationApp() {
 
   const handleSubmit = async () => {
     if(!user) return;
-    if(formData.start_date < minStartDate) return alert('日期錯誤');
+    if(formData.start_date < minStartDate) return alert(`發心起日必須大於或等於今日`);
+    // [新增] 檢查迄日
+    if(formData.end_date < formData.start_date) return alert('發心迄日不能早於發心起日');
+
     const signName = `${getDisplayNameOnly(user.email||'')} (${getIdLast4FromEmail(user.email||'')})`;
     if(supabase) {
-        const { error } = await supabase.from('notes').insert([{...formData, user_id: user.id, id_2: getIdLast4FromEmail(user.email||''), sign_name: signName }]);
+        const { error } = await client.from('notes').insert([{...formData, user_id: user.id, id_2: getIdLast4FromEmail(user.email||''), sign_name: signName }]);
         if(!error) { alert('成功'); window.location.reload(); }
         else alert('失敗');
     } else if (mockDb) {
@@ -581,8 +577,8 @@ export default function RegistrationApp() {
                   <div className="flex flex-col gap-1"><label className="text-sm">4. 姓名*</label><input className="border p-2 rounded" value={formData.real_name} onChange={e=>setFormData({...formData, real_name:e.target.value})} /></div>
                   <div className="flex flex-col gap-1"><label className="text-sm">5. 法名</label><input className="border p-2 rounded" value={formData.dharma_name} onChange={e=>setFormData({...formData, dharma_name:e.target.value})} /></div>
                   <div className="flex flex-col gap-1"><label className="text-sm">6. 新增異動*</label><select className="border p-2 rounded" value={formData.action_type} onChange={e=>setFormData({...formData, action_type:e.target.value})}><option value="新增">新增</option><option value="異動">異動</option></select></div>
-                  <div className="lg:col-span-2 flex flex-col gap-1"><label className="text-sm">7. 起日/時*</label><div className="flex gap-2"><input type="date" className="border p-2 rounded flex-1" value={formData.start_date} onChange={e=>setFormData({...formData, start_date:e.target.value})} /><input type="time" className="border p-2 rounded flex-1" value={formData.start_time} onChange={e=>setFormData({...formData, start_time:e.target.value})} /></div></div>
-                  <div className="lg:col-span-2 flex flex-col gap-1"><label className="text-sm">8. 迄日/時*</label><div className="flex gap-2"><input type="date" className="border p-2 rounded flex-1" value={formData.end_date} onChange={e=>setFormData({...formData, end_date:e.target.value})} /><input type="time" className="border p-2 rounded flex-1" value={formData.end_time} onChange={e=>setFormData({...formData, end_time:e.target.value})} /></div></div>
+                  <div className="lg:col-span-2 flex flex-col gap-1"><label className="text-sm">7. 起日/時*</label><div className="flex gap-2"><input type="date" min={minStartDate} className="border p-2 rounded flex-1" value={formData.start_date} onChange={e=>setFormData({...formData, start_date:e.target.value})} /><input type="time" className="border p-2 rounded flex-1" value={formData.start_time} onChange={e=>setFormData({...formData, start_time:e.target.value})} /></div></div>
+                  <div className="lg:col-span-2 flex flex-col gap-1"><label className="text-sm">8. 迄日/時*</label><div className="flex gap-2"><input type="date" min={formData.start_date || minStartDate} className="border p-2 rounded flex-1" value={formData.end_date} onChange={e=>setFormData({...formData, end_date:e.target.value})} /><input type="time" className="border p-2 rounded flex-1" value={formData.end_time} onChange={e=>setFormData({...formData, end_time:e.target.value})} /></div></div>
                   <div className="md:col-span-4"><label className="flex items-center gap-2"><input type="checkbox" checked={formData.need_help} onChange={e=>setFormData({...formData, need_help:e.target.checked})} /> 9. 需協助報名 (是)</label></div>
                   <div className="md:col-span-4"><textarea className="w-full border p-2 rounded" placeholder="10. 備註" value={formData.memo} onChange={e=>setFormData({...formData, memo:e.target.value})}></textarea></div>
                </div>
