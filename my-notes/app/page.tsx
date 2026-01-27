@@ -235,6 +235,23 @@ const formatDateTime = (isoString: string) => {
     }
 };
 
+// [修正] 將 TabButton 移出主元件，避免重複渲染導致失去焦點或點擊失效
+const TabButton = ({ id, label, icon: Icon, active, onClick, hasNotification }: any) => (
+  <button 
+    type="button"
+    onClick={onClick}
+    className={`flex-1 flex items-center justify-center space-x-2 py-3 px-2 rounded-lg transition-all duration-200 ${
+      active 
+        ? 'bg-white shadow-md text-amber-700 font-bold border border-amber-100' 
+        : 'text-amber-600 hover:bg-amber-100 hover:text-amber-800'
+    }`}
+  >
+    <Icon className={`w-4 h-4 ${active ? 'stroke-2' : 'stroke-[1.5]'}`} />
+    <span className="text-sm md:text-base">{label}</span>
+    {hasNotification && <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse ml-1" />}
+  </button>
+);
+
 export default function RegistrationApp() {
   const supabase = useMemo(() => createSupabaseInstance(), []);
   const client = supabase;
@@ -292,8 +309,8 @@ export default function RegistrationApp() {
     setMinStartDate(dateStr);
   }, []);
 
-  // [新增] 寫入歷程記錄的共用函式
-  const logToHistory = async (action: string, targetUser: any) => {
+  // [新增] 寫入歷程記錄的共用函式 (useCallback 包覆以確保穩定)
+  const logToHistory = useCallback(async (action: string, targetUser: any) => {
       if (!targetUser) return;
       const name = getDisplayNameOnly(targetUser.email || '');
       const uid = targetUser.id;
@@ -316,7 +333,7 @@ export default function RegistrationApp() {
       } catch (e) {
           console.error('Log failed:', e);
       }
-  };
+  }, [client]);
 
   // Actions
   const handleLogout = useCallback(async () => {
@@ -326,7 +343,7 @@ export default function RegistrationApp() {
     await supabase.auth.signOut();
     setUser(null); setNotes([]); setBulletins([]); setUsername(''); setIdLast4(''); setPassword('');
     setIsAdmin(false); setAuthMode('login'); setActiveTab('bulletin');
-  }, [supabase, user]);
+  }, [supabase, user, logToHistory]);
 
   const checkUserStatus = useCallback(async (email: string) => {
       if (!email) return;
