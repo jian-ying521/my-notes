@@ -45,7 +45,94 @@ const createClient = (url: string, key: string, options?: any) => {
 const createClient = (url: string, key: string, options?: any) => {
   return createSupabaseClient(url, key, options);
 };
-
+// --- [模擬連線函式] (部署時請刪除或註解此區塊) ---
+const createClient = (url: string, key: string, options?: any) => {
+  return {
+    auth: {
+      getUser: async () => ({ data: { user: mockUser } }),
+      signUp: async ({ email, password, options }: any) => {
+        const newUid = Math.random().toString();
+        const newUser = { id: newUid, email, user_metadata: options?.data };
+        if (mockDb) {
+           if(!mockDb.user_permissions) mockDb.user_permissions = [];
+           mockDb.user_permissions.push({
+               id: Date.now(),
+               uid: newUid,
+               email: email, 
+               is_admin: false, 
+               is_disabled: false, 
+               user_name: options?.data?.display_name, 
+               id_last4: options?.data?.id_last4,
+               created_at: new Date().toISOString()
+           });
+        }
+        return { data: { user: newUser }, error: null };
+      },
+      signInWithPassword: async ({ email, password }: any) => {
+        if (mockDb && mockDb.user_permissions) {
+             const perm = mockDb.user_permissions.find((p:any) => p.email === email);
+             if (perm && perm.is_disabled) {
+                 return { data: { user: null }, error: { message: '此帳號已被禁用，無法登入。' } };
+             }
+        }
+        mockUser = { email, id: 'mock-id' };
+        if(mockDb && mockDb.user_permissions) {
+             const u = mockDb.user_permissions.find((p:any) => p.email === email);
+             if(u) mockUser.id = u.uid;
+        }
+        return { data: { user: mockUser }, error: null };
+      },
+      updateUser: async () => ({ error: null }),
+      resetPasswordForEmail: async () => ({ error: null }),
+      signOut: async () => { mockUser = null; return { error: null }; },
+      admin: { deleteUser: async () => ({ error: null }) }
+    },
+    from: (table: string) => ({
+      select: (columns: string) => ({
+        order: () => ({ data: mockDb ? (mockDb[table] || []) : [], error: null }),
+        eq: (col: string, val: any) => ({
+             order: () => {
+                 const data = mockDb ? (mockDb[table] || []) : [];
+                 return { data: data.filter((item: any) => item[col] === val), error: null };
+             },
+             single: () => {
+                 const data = mockDb ? (mockDb[table] || []) : [];
+                 const found = data.find((item: any) => item[col] === val);
+                 return { data: found, error: null };
+             }
+        })
+      }),
+      insert: async (data: any[]) => {
+        if (mockDb) {
+            if (!mockDb[table]) mockDb[table] = [];
+            const items = Array.isArray(data) ? data : [data];
+            items.forEach(item => {
+                const newEntry = { ...item, id: Math.random(), created_at: new Date().toISOString() };
+                mockDb[table].push(newEntry);
+            });
+        }
+        return { error: null };
+      },
+      update: (updates: any) => ({
+        eq: async (col: string, val: any) => {
+           if (mockDb && mockDb[table]) {
+             mockDb[table] = mockDb[table].map((item: any) => item[col] === val ? { ...item, ...updates } : item);
+             return { error: null, data: [updates] };
+           }
+           return { error: null, data: [] };
+        }
+      }),
+      delete: () => ({
+        eq: async (col: string, val: any) => {
+          if (mockDb && mockDb[table]) {
+            mockDb[table] = mockDb[table].filter((item: any) => item[col] !== val);
+          }
+          return { error: null };
+        }
+      })
+    }),
+  } as any;
+};
 
 // --- Helper Functions ---
 const getSupabase = () => {
@@ -89,6 +176,11 @@ export default function RegistrationApp() {
   const [isAdmin, setIsAdmin] = useState(false);
   
   const [isLoginMode, setIsLoginMode] = useState(true);
+  
+  // [新增] 忘記密碼模式
+  const [isForgotPwdMode, setIsForgotPwdMode] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
+
   const [activeTab, setActiveTab] = useState<'form' | 'history' | 'admin_data' | 'admin_users' | 'admin_settings' | 'bulletin'>('bulletin');
   const [filterMonth, setFilterMonth] = useState('');
 
@@ -344,34 +436,38 @@ export default function RegistrationApp() {
     setLoading(false);
   };
 
-  // [修正] 修改密碼邏輯與 UI 邏輯修正
   const handleChangePassword = async () => {
-    // 檢查是否為預覽模式
-    if (!supabase) return alert('預覽模式無法執行密碼修改');
-
-    // 檢查目標使用者
-    if (!pwdTargetUser) return;
-
+    if (!newPassword || newPassword.length < 6) return alert('至少6碼');
+    if (!supabase) return alert('預覽模式無法修改');
     if (pwdTargetUser === 'SELF') {
-      // 修改自己的密碼 (只有自己能改自己)
-      if (!newPassword || newPassword.length < 6) return alert('新密碼至少需6碼');
-      
       const { error } = await supabase.auth.updateUser({ password: newPassword });
-      if (error) alert('修改失敗: ' + error.message); 
-      else alert('密碼修改成功！');
-      
+      if (error) alert(error.message); else alert('成功');
     } else {
-      // 管理員重設他人密碼 -> 只能發送重設信
-      // 此處不檢查 newPassword，因為 sendResetPasswordEmail 不需要新密碼
-      const { error } = await supabase.auth.resetPasswordForEmail(pwdTargetUser.email, {
-          redirectTo: typeof window !== 'undefined' ? window.location.origin : undefined
-      });
-      
+      const { error } = await supabase.auth.resetPasswordForEmail(pwdTargetUser.email);
       if (error) alert('發送重設信失敗: ' + error.message);
-      else alert(`已發送重設密碼信件至 ${pwdTargetUser.email}。\n\n(系統限制：管理員無法直接設定他人密碼，需由使用者收信重設)`);
+      else alert(`已發送重設密碼信件至 ${pwdTargetUser.email}。\n請使用者至信箱查收並設定新密碼。`);
     }
     setShowPwdModal(false);
-    setNewPassword('');
+  };
+
+  // [新增] 發送忘記密碼信件
+  const handleForgotPassword = async () => {
+    if (!forgotEmail) return alert('請輸入您的 Email');
+    if (!supabase) return alert('預覽模式無法發送重設信');
+    
+    setLoading(true);
+    const { error } = await supabase.auth.resetPasswordForEmail(forgotEmail, {
+        redirectTo: typeof window !== 'undefined' ? window.location.href : undefined,
+    });
+    
+    if (error) {
+        alert('發送失敗: ' + error.message);
+    } else {
+        alert(`已發送重設信至 ${forgotEmail}。\n請查收信件並點擊連結重設密碼。`);
+        setIsForgotPwdMode(false);
+        setForgotEmail('');
+    }
+    setLoading(false);
   };
 
   const handleAdminAddUser = async () => {
@@ -514,20 +610,44 @@ export default function RegistrationApp() {
 
   return (
     <div className="min-h-screen bg-amber-50 flex flex-col items-center py-10 px-4 font-sans text-gray-900">
-      <h1 className="text-3xl font-bold text-amber-900 mb-8 tracking-wide">一一報名系統 (v2.6)</h1>
+      <h1 className="text-3xl font-bold text-amber-900 mb-8 tracking-wide">一一報名系統 (v2.7)</h1>
 
       {!user ? (
         <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-sm border border-amber-200">
-          <h2 className="text-xl font-bold mb-6 text-center text-gray-700">{isLoginMode ? '登入' : '註冊'}</h2>
-          <div className="space-y-4">
-            <input className="w-full p-3 border rounded" placeholder="姓名" value={username} onChange={e=>setUsername(e.target.value)} />
-            <input className="w-full p-3 border rounded" placeholder="ID後四碼" maxLength={4} value={idLast4} onChange={e=>setIdLast4(e.target.value)} />
-            <input className="w-full p-3 border rounded" type="password" placeholder="密碼" value={password} onChange={e=>setPassword(e.target.value)} />
-          </div>
-          <div className="mt-6 flex flex-col gap-2">
-             <button onClick={isLoginMode ? handleLogin : handleSignUp} className="w-full bg-amber-700 text-white py-3 rounded">{isLoginMode ? '登入' : '註冊'}</button>
-             <button onClick={() => setIsLoginMode(!isLoginMode)} className="text-sm text-gray-500 underline text-center">{isLoginMode ? '沒有帳號？註冊' : '已有帳號？登入'}</button>
-          </div>
+          <h2 className="text-xl font-bold mb-6 text-center text-gray-700">
+            {isForgotPwdMode ? '重設密碼' : (isLoginMode ? '使用者登入' : '註冊新帳號')}
+          </h2>
+
+          {isForgotPwdMode ? (
+              // 忘記密碼表單
+              <div className="space-y-4">
+                  <p className="text-sm text-gray-500 mb-4">請輸入您註冊時的電子信箱 (系統自動產生規則：轉碼後的Email)，系統將發送重設信給您。</p>
+                  <input className="w-full p-3 border rounded" placeholder="請輸入 Email (例如: xxxx@my-notes.com)" value={forgotEmail} onChange={e=>setForgotEmail(e.target.value)} />
+                  <div className="mt-6 flex flex-col gap-2">
+                     <button onClick={handleForgotPassword} disabled={loading} className="w-full bg-blue-600 text-white py-3 rounded">{loading ? '發送中...' : '發送重設信'}</button>
+                     <button onClick={() => setIsForgotPwdMode(false)} className="text-sm text-gray-500 underline text-center">返回登入</button>
+                  </div>
+              </div>
+          ) : (
+              // 登入/註冊表單
+              <>
+                <div className="space-y-4">
+                    <input className="w-full p-3 border rounded" placeholder="姓名" value={username} onChange={e=>setUsername(e.target.value)} />
+                    <input className="w-full p-3 border rounded" placeholder="ID後四碼" maxLength={4} value={idLast4} onChange={e=>setIdLast4(e.target.value)} />
+                    <input className="w-full p-3 border rounded" type="password" placeholder="密碼" value={password} onChange={e=>setPassword(e.target.value)} />
+                </div>
+                <div className="mt-6 flex flex-col gap-2">
+                    <button onClick={isLoginMode ? handleLogin : handleSignUp} className="w-full bg-amber-700 text-white py-3 rounded">{isLoginMode ? '登入' : '註冊'}</button>
+                    
+                    <div className="flex justify-between mt-2">
+                        <button onClick={() => setIsLoginMode(!isLoginMode)} className="text-sm text-gray-500 underline">{isLoginMode ? '沒有帳號？註冊' : '已有帳號？登入'}</button>
+                        {isLoginMode && (
+                            <button onClick={() => setIsForgotPwdMode(true)} className="text-sm text-blue-500 underline">忘記密碼？</button>
+                        )}
+                    </div>
+                </div>
+              </>
+          )}
         </div>
       ) : (
         <div className="w-full max-w-6xl animate-fade-in">
@@ -656,7 +776,7 @@ export default function RegistrationApp() {
                        <button onClick={handleAdminAddUser} className="bg-blue-600 text-white px-3 py-1 rounded text-sm">新增</button>
                     </div>
                  </div>
-                 {/* [修正] 使用者管理列表欄位調整與UI優化 */}
+                 {/* 使用者管理列表 */}
                  <table className="w-full text-sm text-left">
                     <thead className="bg-gray-50">
                         <tr>
@@ -695,7 +815,6 @@ export default function RegistrationApp() {
            {showPwdModal && (
              <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
                 <div className="bg-white p-6 rounded shadow-lg w-full max-w-sm">
-                   {/* [修正] 密碼修改 Modal 邏輯顯示 */}
                    <h3 className="font-bold mb-4">
                       {pwdTargetUser === 'SELF' ? '修改我的密碼' : '發送密碼重設信'}
                    </h3>
