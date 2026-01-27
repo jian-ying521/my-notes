@@ -19,7 +19,8 @@ import {
   User,
   Menu,
   ChevronRight,
-  Download
+  Download,
+  Activity // 新增圖標
 } from 'lucide-react';
 
 // ==========================================
@@ -36,7 +37,6 @@ import {
 // [步驟 1] 部署到 Vercel 時，請解除下方這一行的註解
 // import { createClient as _createSupabaseClient } from '@supabase/supabase-js';
 import { createClient as _createSupabaseClient } from '@supabase/supabase-js';
-
 // --- 設定控制開關 ---
 // [步驟 2] 部署時，請將 true 改為 false
 const useMock = false; 
@@ -50,7 +50,7 @@ let mockDb: any = {
       { id: 101, team_big: '文殊隊', team_small: '第3小隊', monastery: '高雄', real_name: '王小明', dharma_name: '法明', action_type: '新增', start_date: '2025-02-15', start_time: '09:00', end_date: '2025-02-15', end_time: '17:00', need_help: false, memo: '我是王小明的第一筆紀錄', id_2: '5566', sign_name: '王小明 (5566)', is_deleted: false, created_at: new Date('2025-01-15T10:00:00').toISOString(), user_id: 'user-2' },
       { id: 102, team_big: '地藏隊', team_small: '第1小隊', monastery: '花蓮', real_name: '王小明', dharma_name: '法明', action_type: '異動', start_date: '2023-03-01', start_time: '08:30', end_date: '2023-03-03', end_time: '16:00', need_help: true, memo: '已結束的行程', id_2: '5566', sign_name: '王小明 (5566)', is_deleted: false, created_at: new Date('2023-01-20T14:30:00').toISOString(), user_id: 'user-2' }
   ],
-  bulletins: [{ id: 1, content: '🎉 歡迎使用一一報名系統 (v3.9)！\n審核完成後資料將自動鎖定並反灰。', image_url: '', created_at: new Date().toISOString() }],
+  bulletins: [{ id: 1, content: '🎉 歡迎使用一一報名系統 (v4.0)！\n管理員現在可以在「資料」頁籤查看系統登入歷程。', image_url: '', created_at: new Date().toISOString() }],
   user_permissions: [
       { id: 1, email: 'admin@example.com', uid: 'user-1', is_admin: true, is_disabled: false, user_name: 'admin', id_last4: '1111', created_at: new Date().toISOString() },
       { id: 2, email: 'user@example.com', uid: 'user-2', is_admin: false, is_disabled: false, user_name: '王小明', id_last4: '5566', created_at: new Date().toISOString() }
@@ -59,7 +59,12 @@ let mockDb: any = {
       { id: 101, user_name: '王小明', id_last4: '5566', uid: 'user-2', status: 'pending', is_finish: false, created_at: new Date().toISOString() }
   ],
   users: [],
-  login_history: [], 
+  // [新增] 模擬的登入歷史紀錄
+  login_history: [
+      { id: 1, uid: 'user-1', user_name: 'admin', action: '登入', created_at: new Date('2023-10-01T08:00:00').toISOString() },
+      { id: 2, uid: 'user-2', user_name: '王小明', action: '註冊', created_at: new Date('2025-01-15T10:00:00').toISOString() },
+      { id: 3, uid: 'user-2', user_name: '王小明', action: '登入', created_at: new Date('2025-01-15T10:05:00').toISOString() }
+  ], 
   system_options: [
     { id: 1, category: 'team_big', value: '觀音隊' }, { id: 2, category: 'team_big', value: '文殊隊' },
     { id: 3, category: 'team_big', value: '普賢隊' }, { id: 4, category: 'team_big', value: '地藏隊' }, { id: 5, category: 'team_big', value: '彌勒隊' },
@@ -134,6 +139,10 @@ const createMockClient = (url: string, key: string, options?: any) => {
                         if (valA < valB) return ascending ? -1 : 1;
                         return 0;
                     });
+                    return builder;
+                },
+                limit: (count: number) => {
+                    filtered = filtered.slice(0, count);
                     return builder;
                 },
                 eq: (col: string, val: any) => {
@@ -269,7 +278,10 @@ export default function RegistrationApp() {
   const [user, setUser] = useState<any>(null);
   const [resetRequests, setResetRequests] = useState<any[]>([]); 
   const [sortedNotes, setSortedNotes] = useState<any[]>([]);
-  
+  // [新增] 歷程記錄相關狀態
+  const [loginHistory, setLoginHistory] = useState<any[]>([]);
+  const [showHistory, setShowHistory] = useState(false); // 控制資料頁籤的顯示內容
+
   const FAKE_DOMAIN = "@my-notes.com";
 
   const [teamBigOptions, setTeamBigOptions] = useState<any[]>([]);
@@ -442,6 +454,24 @@ export default function RegistrationApp() {
       else setNotes([]);
   }, [supabase]);
 
+  // [新增] 讀取歷程記錄
+  const fetchLoginHistory = useCallback(async () => {
+    let targetClient = supabase;
+    if (!useMock) {
+        // 使用 Service Role Key 確保能讀取所有記錄
+        const serviceRoleKey = process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY;
+        if (serviceRoleKey && process.env.NEXT_PUBLIC_SUPABASE_URL && typeof _createSupabaseClient !== 'undefined') {
+            // @ts-ignore
+            targetClient = _createSupabaseClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceRoleKey, { auth: { persistSession: false } });
+        }
+    }
+    const { data, error } = await targetClient.from('login_history').select('*').order('created_at', { ascending: false }).limit(50);
+    if (error) console.error("讀取歷程失敗:", error);
+    if (data) setLoginHistory(data);
+    else if (useMock && mockDb?.login_history) setLoginHistory(mockDb.login_history);
+    else setLoginHistory([]);
+  }, [supabase]);
+
   const handleAddOption = async (category: string) => {
       if (!newOptionValue.trim()) return alert('請輸入名稱');
       setLoading(true);
@@ -467,6 +497,18 @@ export default function RegistrationApp() {
   };
 
   const exportToExcel = () => {
+    // 依據目前顯示的資料類型決定匯出內容
+    if (showHistory) {
+      if (loginHistory.length === 0) return alert("無歷程資料");
+      const csvContent = "\ufeff" + ["使用者姓名", "UID", "動作", "操作時間"].join(',') + '\n' + 
+          loginHistory.map(h => `${h.user_name},${h.uid},${h.action},${formatDateTime(h.created_at)}`).join('\n');
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(new Blob([csvContent], { type: 'text/csv;charset=utf-8;' }));
+      link.download = 'login_history.csv';
+      link.click();
+      return;
+    }
+
     const data = filterMonth ? sortedNotes.filter(n => n.start_date.startsWith(filterMonth)) : sortedNotes;
     
     if (data.length === 0) return alert("無資料");
@@ -626,14 +668,12 @@ export default function RegistrationApp() {
     setLoading(false);
   };
 
-  // [修改] 批准邏輯：更新狀態為 'completed' 並勾選 is_finish，最後反灰
   const handleApproveReset = async (request: any) => {
     if (!confirm(`確定要批准 ${request.user_name} 的重設申請嗎？\n系統將生成一組隨機密碼。`)) return;
     const tempPassword = Math.floor(100000 + Math.random() * 900000).toString();
     setLoading(true);
     try {
         let currentClient = supabase;
-        
         if (useMock) {
            console.log(`[模擬] 用戶 ${request.uid} 密碼已改為 ${tempPassword}`);
         } else {
@@ -641,16 +681,11 @@ export default function RegistrationApp() {
            if (!serviceRoleKey) { alert('請設定 NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY 環境變數。'); setLoading(false); return; }
            // @ts-ignore
            const adminClient = _createSupabaseClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceRoleKey, { auth: { persistSession: false } });
-           
-           // Update password
            const { error } = await adminClient.auth.admin.updateUserById(request.uid, { password: tempPassword });
            if(error) throw error;
-           
-           // Use adminClient to update the request (bypassing RLS)
            currentClient = adminClient;
         }
 
-        // 更新狀態：status -> completed, is_finish -> true
         if (!useMock) { 
             const { error: updateError } = await currentClient.from('reset_requests')
                 .update({ status: 'completed', is_finish: true })
@@ -662,7 +697,6 @@ export default function RegistrationApp() {
             ); 
         }
         
-        // Optimistic UI update
         setResetRequests(prev => prev.map(r => 
             r.id === request.id ? { ...r, status: 'completed', is_finish: true } : r
         ));
@@ -673,13 +707,10 @@ export default function RegistrationApp() {
     setLoading(false);
   };
 
-  // [修改] 駁回邏輯：更新狀態為 'rejected' 並勾選 is_finish，最後反灰
   const handleRejectReset = async (id: number) => {
       if(!confirm('確定駁回?')) return;
-      
       try {
         let currentClient = supabase;
-
         if (!useMock) { 
             const serviceRoleKey = process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY;
             if (serviceRoleKey) {
@@ -687,19 +718,15 @@ export default function RegistrationApp() {
                 const adminClient = _createSupabaseClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceRoleKey, { auth: { persistSession: false } });
                 currentClient = adminClient;
             }
-
             const { error } = await currentClient.from('reset_requests')
               .update({ status: 'rejected', is_finish: true })
               .eq('id', id); 
-            
             if(error) throw error;
         } else { 
             mockDb.reset_requests = mockDb.reset_requests.map((r:any) => 
               r.id === id ? { ...r, status: 'rejected', is_finish: true } : r
             ); 
         }
-        
-        // Optimistic update
         setResetRequests(prev => prev.map(r => 
           r.id === id ? { ...r, status: 'rejected', is_finish: true } : r
         ));
@@ -781,8 +808,13 @@ export default function RegistrationApp() {
           if (activeTab === 'admin_users') fetchAllUsers();
           if (activeTab === 'admin_settings') fetchOptions();
           if (activeTab === 'admin_requests') fetchResetRequests(); 
+          // [新增] 切換到資料頁籤時，同時讀取歷程
+          if (activeTab === 'admin_data') {
+             fetchNotes();
+             fetchLoginHistory();
+          }
       }
-  }, [activeTab, isAdmin, fetchAllUsers, fetchOptions, fetchResetRequests]);
+  }, [activeTab, isAdmin, fetchAllUsers, fetchOptions, fetchResetRequests, fetchNotes, fetchLoginHistory]);
 
   useEffect(() => {
     const init = async () => {
@@ -825,7 +857,7 @@ export default function RegistrationApp() {
     <div className="min-h-screen bg-amber-50 flex flex-col items-center py-10 px-4 font-sans text-gray-900">
       <h1 className="text-3xl font-extrabold text-amber-900 mb-8 tracking-wide flex items-center gap-3">
         <Shield className="w-8 h-8 text-amber-600" />
-        一一報名系統 (v3.9)
+        一一報名系統 (v4.0)
       </h1>
 
       {!user ? (
@@ -1076,72 +1108,109 @@ export default function RegistrationApp() {
            {activeTab === 'admin_data' && isAdmin && (
               <div className="bg-white p-6 rounded-2xl shadow-sm overflow-hidden">
                  <div className="flex justify-between items-center mb-6">
-                   <h3 className="font-bold text-gray-700 text-lg flex items-center gap-2"><FileText className="w-5 h-5"/> 資料總表</h3>
-                   <button onClick={exportToExcel} className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-colors">
-                     <Download className="w-4 h-4"/> 匯出 Excel
-                   </button>
+                   <h3 className="font-bold text-gray-700 text-lg flex items-center gap-2">
+                       {showHistory ? <Activity className="w-5 h-5"/> : <FileText className="w-5 h-5"/>} 
+                       {showHistory ? '系統歷程' : '資料總表'}
+                   </h3>
+                   <div className="flex gap-3">
+                       <button onClick={() => setShowHistory(!showHistory)} className="bg-blue-50 text-blue-600 px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-blue-100 transition-colors">
+                           {showHistory ? <FileText className="w-4 h-4"/> : <Activity className="w-4 h-4"/>}
+                           {showHistory ? '查看報名資料' : '查看系統歷程'}
+                       </button>
+                       <button onClick={exportToExcel} className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-colors">
+                         <Download className="w-4 h-4"/> 匯出 Excel
+                       </button>
+                   </div>
                  </div>
+                 
                  <div className="overflow-x-auto">
-                   <table className="w-full text-sm text-left">
-                      <thead className="bg-gray-50 text-gray-600">
-                        <tr>
-                          <th className="p-3 rounded-l-lg">大隊</th>
-                          <th className="p-3">小隊</th>
-                          <th className="p-3">姓名</th>
-                          <th className="p-3">法名</th>
-                          {/* [新增] 狀態欄位 */}
-                          <th className="p-3 text-center">狀態</th> 
-                          <th className="p-3">發心起日/時</th>
-                          <th className="p-3">發心迄日/時</th>
-                          <th className="p-3">發心日數</th>
-                          <th className="p-3 rounded-r-lg">填表人</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-100">
-                        {/* [修改] 使用 sortedNotes 進行渲染 */}
-                        {sortedNotes.map(n=>{
-                          const status = getNoteStatus(n);
-                          const isInactive = status === 'deleted' || status === 'completed';
-                          
-                          return (
-                          <tr key={n.id} className={`hover:bg-gray-50/50 transition-colors ${isInactive ? 'text-gray-400' : ''}`}>
-                            <td className="p-3 font-medium text-gray-800">{n.team_big}</td>
-                            <td className="p-3 text-gray-600">{n.team_small}</td>
-                            <td className="p-3">{n.real_name}</td>
-                            <td className="p-3 text-gray-600">{n.dharma_name || '-'}</td>
-                            
-                            {/* [新增] 狀態標籤顯示 */}
-                            <td className="p-3 text-center">
-                                <span className={`px-2 py-1 rounded text-xs font-bold ${
-                                    status === 'deleted' ? 'bg-red-100 text-red-700' : 
-                                    status === 'completed' ? 'bg-gray-200 text-gray-600' :
-                                    n.action_type === '新增' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'
-                                }`}>
-                                    {status === 'deleted' ? '已刪除' : status === 'completed' ? '已圓滿' : n.action_type}
-                                </span>
-                            </td>
+                   {showHistory ? (
+                       <table className="w-full text-sm text-left">
+                           <thead className="bg-gray-50 text-gray-600">
+                               <tr>
+                                   <th className="p-3 rounded-l-lg">使用者</th>
+                                   <th className="p-3">動作</th>
+                                   <th className="p-3 rounded-r-lg">時間</th>
+                               </tr>
+                           </thead>
+                           <tbody className="divide-y divide-gray-100">
+                               {loginHistory.map((h, i) => (
+                                   <tr key={i} className="hover:bg-gray-50/50">
+                                       <td className="p-3 font-medium text-gray-800">{h.user_name} <span className="text-gray-400 text-xs ml-1">({h.uid})</span></td>
+                                       <td className="p-3">
+                                           <span className={`px-2 py-1 rounded-full text-xs font-bold ${
+                                               h.action === '登入' ? 'bg-green-100 text-green-700' : 
+                                               h.action === '登出' ? 'bg-gray-100 text-gray-700' : 
+                                               'bg-blue-100 text-blue-700'
+                                           }`}>
+                                               {h.action}
+                                           </span>
+                                       </td>
+                                       <td className="p-3 text-gray-500 font-mono text-xs">{formatDateTime(h.created_at)}</td>
+                                   </tr>
+                               ))}
+                               {loginHistory.length === 0 && <tr><td colSpan={3} className="p-8 text-center text-gray-400">目前沒有歷程紀錄</td></tr>}
+                           </tbody>
+                       </table>
+                   ) : (
+                       <table className="w-full text-sm text-left">
+                          <thead className="bg-gray-50 text-gray-600">
+                            <tr>
+                              <th className="p-3 rounded-l-lg">大隊</th>
+                              <th className="p-3">小隊</th>
+                              <th className="p-3">姓名</th>
+                              <th className="p-3">法名</th>
+                              <th className="p-3 text-center">狀態</th> 
+                              <th className="p-3">發心起日/時</th>
+                              <th className="p-3">發心迄日/時</th>
+                              <th className="p-3">發心日數</th>
+                              <th className="p-3 rounded-r-lg">填表人</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-100">
+                            {sortedNotes.map(n=>{
+                              const status = getNoteStatus(n);
+                              const isInactive = status === 'deleted' || status === 'completed';
+                              
+                              return (
+                              <tr key={n.id} className={`hover:bg-gray-50/50 transition-colors ${isInactive ? 'text-gray-400' : ''}`}>
+                                <td className="p-3 font-medium text-gray-800">{n.team_big}</td>
+                                <td className="p-3 text-gray-600">{n.team_small}</td>
+                                <td className="p-3">{n.real_name}</td>
+                                <td className="p-3 text-gray-600">{n.dharma_name || '-'}</td>
+                                
+                                <td className="p-3 text-center">
+                                    <span className={`px-2 py-1 rounded text-xs font-bold ${
+                                        status === 'deleted' ? 'bg-red-100 text-red-700' : 
+                                        status === 'completed' ? 'bg-gray-200 text-gray-600' :
+                                        n.action_type === '新增' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'
+                                    }`}>
+                                        {status === 'deleted' ? '已刪除' : status === 'completed' ? '已圓滿' : n.action_type}
+                                    </span>
+                                </td>
 
-                            <td className="p-3">
-                              <div className="font-medium">{n.start_date}</div>
-                              <div className="text-xs opacity-70">{n.start_time}</div>
-                            </td>
-                            
-                            <td className="p-3">
-                              <div className="font-medium">{n.end_date}</div>
-                              <div className="text-xs opacity-70">{n.end_time}</div>
-                            </td>
-                            
-                            <td className="p-3 text-center">
-                              <span className="bg-amber-100 text-amber-800 px-2 py-1 rounded font-bold text-xs">
-                                {calculateDuration(n.start_date, n.end_date)} 天
-                              </span>
-                            </td>
+                                <td className="p-3">
+                                  <div className="font-medium">{n.start_date}</div>
+                                  <div className="text-xs opacity-70">{n.start_time}</div>
+                                </td>
+                                
+                                <td className="p-3">
+                                  <div className="font-medium">{n.end_date}</div>
+                                  <div className="text-xs opacity-70">{n.end_time}</div>
+                                </td>
+                                
+                                <td className="p-3 text-center">
+                                  <span className="bg-amber-100 text-amber-800 px-2 py-1 rounded font-bold text-xs">
+                                    {calculateDuration(n.start_date, n.end_date)} 天
+                                  </span>
+                                </td>
 
-                            <td className="p-3 text-blue-500 font-mono text-xs">{n.sign_name}</td>
-                          </tr>
-                        )})}
-                      </tbody>
-                   </table>
+                                <td className="p-3 text-blue-500 font-mono text-xs">{n.sign_name}</td>
+                              </tr>
+                            )})}
+                          </tbody>
+                       </table>
+                   )}
                  </div>
               </div>
            )}
@@ -1168,7 +1237,6 @@ export default function RegistrationApp() {
                        </thead>
                        <tbody className="divide-y divide-gray-100">
                            {resetRequests.map(r => (
-                               // [修改] 狀態不為 'pending' 時 (即 is_finish 為 true)，整行反灰且透明度降低，模擬 disabled 狀態
                                <tr key={r.id} className={`transition-colors ${r.is_finish ? 'bg-gray-100 opacity-50 select-none' : 'hover:bg-gray-50'}`}>
                                    <td className="p-3 font-bold text-gray-800">{r.user_name}</td>
                                    <td className="p-3 font-mono text-gray-500">{r.id_last4}</td>
@@ -1179,12 +1247,10 @@ export default function RegistrationApp() {
                                          r.status==='completed' ? 'bg-green-100 text-green-700 border-green-200' : 
                                          'bg-red-100 text-red-700 border-red-200'
                                        }`}>
-                                           {/* [修改] 狀態文字修正 */}
                                            {r.status === 'pending' ? '待審核' : r.status === 'completed' ? '已完成' : '已駁回'}
                                        </span>
                                    </td>
                                    <td className="p-3">
-                                       {/* [修改] 根據 is_finish 決定是否顯示按鈕 */}
                                        {!r.is_finish && (
                                            <div className="flex gap-2">
                                                <button onClick={() => handleApproveReset(r)} className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-xs hover:bg-blue-700 flex items-center gap-1 shadow-sm font-bold">
@@ -1195,9 +1261,7 @@ export default function RegistrationApp() {
                                                </button>
                                            </div>
                                        )}
-                                       {/* [新增] 已完成狀態顯示 (打勾) */}
                                        {r.status === 'completed' && <span className="text-green-600 font-bold text-xs flex items-center"><Check className="w-4 h-4 mr-1"/>已完成</span>}
-                                       {/* [新增] 已駁回狀態顯示 (叉叉) */}
                                        {r.status === 'rejected' && <span className="text-red-600 font-bold text-xs flex items-center"><X className="w-4 h-4 mr-1"/>已駁回</span>}
                                    </td>
                                </tr>
