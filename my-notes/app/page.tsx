@@ -50,7 +50,7 @@ let mockDb: any = {
       // [新增] 模擬一筆已過期的資料，測試「已圓滿」功能
       { id: 102, team_big: '地藏隊', team_small: '第1小隊', monastery: '花蓮', real_name: '王小明', dharma_name: '法明', action_type: '異動', start_date: '2023-03-01', start_time: '08:30', end_date: '2023-03-03', end_time: '16:00', need_help: true, memo: '已結束的行程', id_2: '5566', sign_name: '王小明 (5566)', is_deleted: false, created_at: new Date('2023-01-20T14:30:00').toISOString(), user_id: 'user-2' }
   ],
-  bulletins: [{ id: 1, content: '🎉 歡迎使用一一報名系統 (v3.5)！\n管理員現在可以直接在用戶列表設定其他管理員了。', image_url: '', created_at: new Date().toISOString() }],
+  bulletins: [{ id: 1, content: '🎉 歡迎使用一一報名系統 (v3.5)！\n已在資料總表中加入「法名」欄位。', image_url: '', created_at: new Date().toISOString() }],
   user_permissions: [
       { id: 1, email: 'admin@example.com', uid: 'user-1', is_admin: true, is_disabled: false, user_name: 'admin', id_last4: '1111', created_at: new Date().toISOString() },
       { id: 2, email: 'user@example.com', uid: 'user-2', is_admin: false, is_disabled: false, user_name: '王小明', id_last4: '5566', created_at: new Date().toISOString() }
@@ -974,6 +974,7 @@ export default function RegistrationApp() {
                           <th className="p-3 rounded-l-lg">大隊</th>
                           <th className="p-3">小隊</th> {/* [新增] 小隊欄位 */}
                           <th className="p-3">姓名</th>
+                          <th className="p-3">法名</th> {/* [新增] 法名欄位 */}
                           <th className="p-3">發心起日/時</th>
                           <th className="p-3">發心迄日/時</th>
                           <th className="p-3">發心日數</th>
@@ -986,6 +987,7 @@ export default function RegistrationApp() {
                             <td className="p-3 font-medium text-gray-800">{n.team_big}</td>
                             <td className="p-3 text-gray-600">{n.team_small}</td> {/* [新增] 顯示小隊資料 */}
                             <td className="p-3">{n.real_name}</td>
+                            <td className="p-3 text-gray-600">{n.dharma_name || '-'}</td> {/* [新增] 顯示法名 */}
                             
                             <td className="p-3 text-gray-600">
                               <div className="font-medium">{n.start_date}</div>
