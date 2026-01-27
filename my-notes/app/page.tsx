@@ -14,6 +14,7 @@ import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 // import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 
+
 // --- 全域變數宣告 ---
 let mockUser: any = null;
 let mockDb: any = {
@@ -70,7 +71,8 @@ export default function RegistrationApp() {
   const [allUsers, setAllUsers] = useState<any[]>([]); 
   const [user, setUser] = useState<any>(null);
   
-  const supabase = getSupabase(); 
+  // [關鍵修正] 使用 useState 初始化 supabase 實例，避免每次 render 都重新建立導致無限迴圈與閃爍
+  const [supabase] = useState(() => getSupabase());
   const client = useMemo(() => supabase || createClient('mock','mock'), [supabase]);
 
   const FAKE_DOMAIN = "@my-notes.com";
@@ -127,9 +129,8 @@ export default function RegistrationApp() {
   const isExpired = (d: string, t: string) => { if(!d) return false; return new Date(`${d}T${t||'23:59:59'}`) < new Date(); };
 
   useEffect(() => {
-    // 設定最小起始日期為「今天」
     const d = new Date(); 
-    // d.setDate(d.getDate() + 1); // 原本是 +1 (明天)，現在改為當天
+    d.setDate(d.getDate() + 1);
     const dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
     setMinStartDate(dateStr);
   }, []);
@@ -163,6 +164,7 @@ export default function RegistrationApp() {
       } catch (e) { console.error(e); }
   }, [supabase, client, handleLogout]);
 
+  // 讀取選項
   const fetchOptions = useCallback(async () => {
     try {
       const { data: bigDataRaw } = await client.from('system_options').select('*').eq('category', 'team_big').order('created_at', { ascending: true });
@@ -412,10 +414,7 @@ export default function RegistrationApp() {
 
   const handleSubmit = async () => {
     if(!user) return;
-    if(formData.start_date < minStartDate) return alert(`發心起日必須大於或等於今日`);
-    // [新增] 檢查迄日
-    if(formData.end_date < formData.start_date) return alert('發心迄日不能早於發心起日');
-
+    if(formData.start_date < minStartDate) return alert('日期錯誤');
     const signName = `${getDisplayNameOnly(user.email||'')} (${getIdLast4FromEmail(user.email||'')})`;
     if(supabase) {
         const { error } = await client.from('notes').insert([{...formData, user_id: user.id, id_2: getIdLast4FromEmail(user.email||''), sign_name: signName }]);
@@ -476,7 +475,8 @@ export default function RegistrationApp() {
         setUser(user);
         if(user) {
             const name = getDisplayNameOnly(user.email||'');
-            setFormData(p => ({...p, real_name: name}));
+            // [修正] 預設填入姓名，但允許之後被修改 (僅初始化一次)
+            setFormData(p => ({...p, real_name: p.real_name || name}));
             fetchNotes();
             fetchBulletins();
             fetchOptions();
@@ -499,7 +499,7 @@ export default function RegistrationApp() {
 
   return (
     <div className="min-h-screen bg-amber-50 flex flex-col items-center py-10 px-4 font-sans text-gray-900">
-      <h1 className="text-3xl font-bold text-amber-900 mb-8 tracking-wide">一一報名系統</h1>
+      <h1 className="text-3xl font-bold text-amber-900 mb-8 tracking-wide">一一報名系統 (v2.5)</h1>
 
       {!user ? (
         <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-sm border border-amber-200">
@@ -537,10 +537,10 @@ export default function RegistrationApp() {
            {/* Tabs */}
            <div className="flex mb-6 bg-amber-100 p-1 rounded-lg w-full overflow-x-auto">
              {['bulletin','form','history'].map(t => (
-                 <button key={t} onClick={()=>setActiveTab(t as any)} className={`flex-1 py-3 px-2 rounded-md ${activeTab===t?'bg-white shadow-sm':'text-amber-600'}`}>{t==='bulletin'?'公告':t==='form'?'報名':'紀錄'}</button>
+                 <button key={t} onClick={()=>setActiveTab(t as any)} className={`flex-1 py-3 px-2 rounded-md ${activeTab===t?'bg-white shadow-sm text-black font-bold':'text-amber-600'}`}>{t==='bulletin'?'公告':t==='form'?'報名':'紀錄'}</button>
              ))}
              {isAdmin && ['admin_data','admin_users','admin_settings'].map(t => (
-                 <button key={t} onClick={()=>setActiveTab(t as any)} className={`flex-1 py-3 px-2 rounded-md ${activeTab===t?'bg-white shadow-sm':'text-amber-600'}`}>{t==='admin_data'?'資料':t==='admin_users'?'用戶':'設定'}</button>
+                 <button key={t} onClick={()=>setActiveTab(t as any)} className={`flex-1 py-3 px-2 rounded-md ${activeTab===t?'bg-white shadow-sm text-blue-800 font-bold':'text-blue-600'}`}>{t==='admin_data'?'資料':t==='admin_users'?'用戶':'設定'}</button>
              ))}
            </div>
 
@@ -578,7 +578,7 @@ export default function RegistrationApp() {
                   <div className="flex flex-col gap-1"><label className="text-sm">5. 法名</label><input className="border p-2 rounded" value={formData.dharma_name} onChange={e=>setFormData({...formData, dharma_name:e.target.value})} /></div>
                   <div className="flex flex-col gap-1"><label className="text-sm">6. 新增異動*</label><select className="border p-2 rounded" value={formData.action_type} onChange={e=>setFormData({...formData, action_type:e.target.value})}><option value="新增">新增</option><option value="異動">異動</option></select></div>
                   <div className="lg:col-span-2 flex flex-col gap-1"><label className="text-sm">7. 起日/時*</label><div className="flex gap-2"><input type="date" min={minStartDate} className="border p-2 rounded flex-1" value={formData.start_date} onChange={e=>setFormData({...formData, start_date:e.target.value})} /><input type="time" className="border p-2 rounded flex-1" value={formData.start_time} onChange={e=>setFormData({...formData, start_time:e.target.value})} /></div></div>
-                  <div className="lg:col-span-2 flex flex-col gap-1"><label className="text-sm">8. 迄日/時*</label><div className="flex gap-2"><input type="date" min={formData.start_date || minStartDate} className="border p-2 rounded flex-1" value={formData.end_date} onChange={e=>setFormData({...formData, end_date:e.target.value})} /><input type="time" className="border p-2 rounded flex-1" value={formData.end_time} onChange={e=>setFormData({...formData, end_time:e.target.value})} /></div></div>
+                  <div className="lg:col-span-2 flex flex-col gap-1"><label className="text-sm">8. 迄日/時*</label><div className="flex gap-2"><input type="date" min={formData.start_date} className="border p-2 rounded flex-1" value={formData.end_date} onChange={e=>setFormData({...formData, end_date:e.target.value})} /><input type="time" className="border p-2 rounded flex-1" value={formData.end_time} onChange={e=>setFormData({...formData, end_time:e.target.value})} /></div></div>
                   <div className="md:col-span-4"><label className="flex items-center gap-2"><input type="checkbox" checked={formData.need_help} onChange={e=>setFormData({...formData, need_help:e.target.checked})} /> 9. 需協助報名 (是)</label></div>
                   <div className="md:col-span-4"><textarea className="w-full border p-2 rounded" placeholder="10. 備註" value={formData.memo} onChange={e=>setFormData({...formData, memo:e.target.value})}></textarea></div>
                </div>
@@ -641,7 +641,7 @@ export default function RegistrationApp() {
                        <button onClick={handleAdminAddUser} className="bg-blue-600 text-white px-3 py-1 rounded text-sm">新增</button>
                     </div>
                  </div>
-                 {/* [修正] 使用者管理列表欄位調整 */}
+                 {/* [使用者管理列表] 確認欄位 */}
                  <table className="w-full text-sm text-left">
                     <thead className="bg-gray-50">
                         <tr>
