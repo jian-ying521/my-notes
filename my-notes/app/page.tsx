@@ -509,30 +509,40 @@ export default function RegistrationApp() {
 
   // [新增] 處理密碼重設申請 (使用者端)
   const handleRequestReset = async () => {
-    if (!username || !idLast4) return alert('請輸入完整資訊');
+    // [修正] 自動去除前後空白，避免手機輸入產生隱形空白導致找不到人
+    const cleanName = username.trim();
+    const cleanId = idLast4.trim();
+
+    if (!cleanName || !cleanId) return alert('請輸入完整資訊');
     setLoading(true);
 
     try {
+      console.log(`[重設申請] 正在搜尋用戶: 姓名=[${cleanName}], ID=[${cleanId}]`);
+      
       // 1. 先確認該用戶是否存在 (Mock 或 Supabase)
       let targetUser = null;
       if (supabase) {
-        const { data } = await client.from('user_permissions').select('*').eq('user_name', username).eq('id_last4', idLast4).single();
+        // [修正] 使用 trim 後的變數進行查詢
+        const { data } = await client.from('user_permissions').select('*').eq('user_name', cleanName).eq('id_last4', cleanId).single();
         targetUser = data;
       } else if (mockDb && mockDb.user_permissions) {
-        targetUser = mockDb.user_permissions.find((u:any) => u.user_name === username && u.id_last4 === idLast4);
+        console.log('[Mock 模式] 目前模擬資料庫中的用戶:', mockDb.user_permissions);
+        // [修正] 使用 trim 後的變數進行比對
+        targetUser = mockDb.user_permissions.find((u:any) => u.user_name === cleanName && u.id_last4 === cleanId);
       }
 
       if (!targetUser) {
         // 為了安全，也可以選擇不提示 "找不到用戶"，但內部系統方便為主
-        alert('找不到此用戶，請檢查姓名與 ID 後 4 碼是否正確。');
+        console.warn('[重設申請] 找不到符合的用戶。請確認 user_permissions 資料表是否有該使用者的 user_name 與 id_last4');
+        alert(`找不到此用戶 (${cleanName}, ${cleanId})。\n\n如果是正式環境，請確認「user_permissions」資料表有此資料。\n如果是測試環境，請確認姓名與ID完全相符。`);
         setLoading(false);
         return;
       }
 
       // 2. 建立申請
       const newRequest = {
-         user_name: username,
-         id_last4: idLast4,
+         user_name: cleanName, // 使用去除空白後的名稱
+         id_last4: cleanId,
          uid: targetUser.uid,
          status: 'pending',
       };
