@@ -36,6 +36,7 @@ import {
 // [步驟 1] 部署到 Vercel 時，請解除下方這一行的註解
 // import { createClient as _createSupabaseClient } from '@supabase/supabase-js';
 import { createClient as _createSupabaseClient } from '@supabase/supabase-js';
+
 // --- 設定控制開關 ---
 // [步驟 2] 部署時，請將 true 改為 false
 const useMock = false; 
@@ -310,6 +311,10 @@ export default function RegistrationApp() {
     need_help: false, memo: ''
   });
 
+  // [新增] 使用 useRef 追蹤 user 狀態，避免 useEffect 無限迴圈
+  const userRef = useRef(user);
+  useEffect(() => { userRef.current = user; }, [user]);
+
   useEffect(() => {
     const d = new Date(); 
     const dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
@@ -354,12 +359,13 @@ export default function RegistrationApp() {
       } catch (e) { console.error('Log failed:', e); }
   }, [client]);
 
+  // [修正] 使用 userRef 來解決依賴循環問題
   const handleLogout = useCallback(async () => {
-    if (user) await logToHistory('登出', user);
+    if (userRef.current) await logToHistory('登出', userRef.current);
     await supabase.auth.signOut();
     setUser(null); setNotes([]); setBulletins([]); setUsername(''); setIdLast4(''); setPassword('');
     setIsAdmin(false); setAuthMode('login'); setActiveTab('bulletin');
-  }, [supabase, user, logToHistory]);
+  }, [supabase, logToHistory]);
 
   const checkUserStatus = useCallback(async (email: string) => {
       if (!email) return;
@@ -647,7 +653,6 @@ export default function RegistrationApp() {
 
         setApprovedResult({ name: request.user_name, pwd: tempPassword });
         setShowApprovalModal(true); 
-        // fetchResetRequests(); // Optional since we updated local state
     } catch(e: any) { alert('重設失敗: ' + e.message); }
     setLoading(false);
   };
@@ -659,7 +664,6 @@ export default function RegistrationApp() {
       
       // Optimistic update
       setResetRequests(prev => prev.map(r => r.id === id ? { ...r, status: 'rejected' } : r));
-      // fetchResetRequests();
   };
 
   const handleAdminAddUser = async () => {
@@ -738,6 +742,7 @@ export default function RegistrationApp() {
       }
   }, [activeTab, isAdmin, fetchAllUsers, fetchOptions, fetchResetRequests]);
 
+  // [修正] 確保初始化時執行一次，並且解決依賴問題
   useEffect(() => {
     const init = async () => {
         const { data: { user } } = await supabase.auth.getUser();
@@ -758,7 +763,6 @@ export default function RegistrationApp() {
       return <div className="p-10 text-center text-red-500 font-bold">⚠️ 系統未連接資料庫。請在 Vercel 設定環境變數。</div>;
   }
 
-  // [修正] Helper function for rendering tabs to ensure stability and correct click handling
   const renderTab = (id: any, label: string, Icon: any, hasNotification = false) => (
       <button 
         key={id}
