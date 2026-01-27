@@ -50,7 +50,7 @@ let mockDb: any = {
       { id: 101, team_big: '文殊隊', team_small: '第3小隊', monastery: '高雄', real_name: '王小明', dharma_name: '法明', action_type: '新增', start_date: '2025-02-15', start_time: '09:00', end_date: '2025-02-15', end_time: '17:00', need_help: false, memo: '我是王小明的第一筆紀錄', id_2: '5566', sign_name: '王小明 (5566)', is_deleted: false, created_at: new Date('2025-01-15T10:00:00').toISOString(), user_id: 'user-2' },
       { id: 102, team_big: '地藏隊', team_small: '第1小隊', monastery: '花蓮', real_name: '王小明', dharma_name: '法明', action_type: '異動', start_date: '2023-03-01', start_time: '08:30', end_date: '2023-03-03', end_time: '16:00', need_help: true, memo: '已結束的行程', id_2: '5566', sign_name: '王小明 (5566)', is_deleted: false, created_at: new Date('2023-01-20T14:30:00').toISOString(), user_id: 'user-2' }
   ],
-  bulletins: [{ id: 1, content: '🎉 歡迎使用一一報名系統 (v4.2)！\n已修正歷程記錄寫入問題。', image_url: '', created_at: new Date().toISOString() }],
+  bulletins: [{ id: 1, content: '🎉 歡迎使用一一報名系統 (v4.3)！\n歷程記錄已包含 ID 後 4 碼。', image_url: '', created_at: new Date().toISOString() }],
   user_permissions: [
       { id: 1, email: 'admin@example.com', uid: 'user-1', is_admin: true, is_disabled: false, user_name: 'admin', id_last4: '1111', created_at: new Date().toISOString() },
       { id: 2, email: 'user@example.com', uid: 'user-2', is_admin: false, is_disabled: false, user_name: '王小明', id_last4: '5566', created_at: new Date().toISOString() }
@@ -59,11 +59,11 @@ let mockDb: any = {
       { id: 101, user_name: '王小明', id_last4: '5566', uid: 'user-2', status: 'pending', is_finish: false, created_at: new Date().toISOString() }
   ],
   users: [],
-  // 模擬的登入歷史紀錄 (注意欄位已修正為 real_name)
+  // 模擬的登入歷史紀錄 (加入 id_last4)
   login_history: [
-      { id: 1, real_name: 'admin', action: '登入', created_at: new Date('2023-10-01T08:00:00').toISOString() },
-      { id: 2, real_name: '王小明', action: '註冊', created_at: new Date('2025-01-15T10:00:00').toISOString() },
-      { id: 3, real_name: '王小明', action: '登入', created_at: new Date('2025-01-15T10:05:00').toISOString() }
+      { id: 1, real_name: 'admin', id_last4: '1111', action: '登入', created_at: new Date('2023-10-01T08:00:00').toISOString() },
+      { id: 2, real_name: '王小明', id_last4: '5566', action: '註冊', created_at: new Date('2025-01-15T10:00:00').toISOString() },
+      { id: 3, real_name: '王小明', id_last4: '5566', action: '登入', created_at: new Date('2025-01-15T10:05:00').toISOString() }
   ], 
   system_options: [
     { id: 1, category: 'team_big', value: '觀音隊' }, { id: 2, category: 'team_big', value: '文殊隊' },
@@ -358,15 +358,17 @@ export default function RegistrationApp() {
     setSortedNotes(sorted);
   }, [notes]);
 
-  // [修改] 歷程記錄函式：修正 payload 欄位為 real_name
+  // [修改] 歷程記錄函式：加入 id_last4 欄位
   const logToHistory = useCallback(async (action: string, targetUser: any) => {
       if (!targetUser) return;
       const name = getDisplayNameOnly(targetUser.email || '');
-      // const uid = targetUser.id; // 暫時移除 uid，避免資料庫無此欄位報錯
+      // const uid = targetUser.id; // 暫時移除 uid
+      const idLast4 = getIdLast4FromEmail(targetUser.email || '');
 
-      // 修正：Payload 欄位名稱對應 Supabase 資料表 (real_name, action, created_at)
+      // 修正：Payload 欄位名稱對應 Supabase 資料表 (real_name, id_last4, action, created_at)
       const payload = { 
           real_name: name, 
+          id_last4: idLast4, // 新增此欄位
           action: action, 
           created_at: new Date().toISOString() 
       };
@@ -374,7 +376,7 @@ export default function RegistrationApp() {
       if (useMock) {
           if (!mockDb.login_history) mockDb.login_history = []; 
           mockDb.login_history.push({ ...payload, id: Date.now() }); 
-          console.log(`[Log] ${action}: ${name}`);
+          console.log(`[Log] ${action}: ${name} (${idLast4})`);
           return;
       }
 
@@ -396,7 +398,6 @@ export default function RegistrationApp() {
               });
               if (!res.ok) {
                   console.error('Log REST Error:', await res.text());
-                  // 如果失敗，嘗試用一般 client (雖然可能被 RLS 擋)
                   await client.from('login_history').insert([payload]); 
               }
           } else {
@@ -535,9 +536,9 @@ export default function RegistrationApp() {
   const exportToExcel = () => {
     if (showHistory) {
       if (loginHistory.length === 0) return alert("無歷程資料");
-      // [修改] 匯出也對應 real_name
-      const csvContent = "\ufeff" + ["使用者姓名", "動作", "操作時間"].join(',') + '\n' + 
-          loginHistory.map(h => `${h.real_name},${h.action},${formatDateTime(h.created_at)}`).join('\n');
+      // [修改] 匯出加入 ID後4碼
+      const csvContent = "\ufeff" + ["使用者姓名", "ID後4碼", "動作", "操作時間"].join(',') + '\n' + 
+          loginHistory.map(h => `${h.real_name},${h.id_last4 || ''},${h.action},${formatDateTime(h.created_at)}`).join('\n');
       const link = document.createElement('a');
       link.href = URL.createObjectURL(new Blob([csvContent], { type: 'text/csv;charset=utf-8;' }));
       link.download = 'login_history.csv';
@@ -892,7 +893,7 @@ export default function RegistrationApp() {
     <div className="min-h-screen bg-amber-50 flex flex-col items-center py-10 px-4 font-sans text-gray-900">
       <h1 className="text-3xl font-extrabold text-amber-900 mb-8 tracking-wide flex items-center gap-3">
         <Shield className="w-8 h-8 text-amber-600" />
-        一一報名系統 (v4.2)
+        一一報名系統 (v4.3)
       </h1>
 
       {!user ? (
@@ -1171,8 +1172,10 @@ export default function RegistrationApp() {
                            <tbody className="divide-y divide-gray-100">
                                {loginHistory.map((h, i) => (
                                    <tr key={i} className="hover:bg-gray-50/50">
-                                       {/* [修改] 顯示 real_name，如果沒有則顯示 UID */}
-                                       <td className="p-3 font-medium text-gray-800">{h.real_name || h.uid}</td>
+                                       <td className="p-3 font-medium text-gray-800">
+                                           {h.real_name || h.uid}
+                                           {h.id_last4 && <span className="text-gray-400 text-xs ml-1">({h.id_last4})</span>}
+                                       </td>
                                        <td className="p-3">
                                            <span className={`px-2 py-1 rounded-full text-xs font-bold ${
                                                h.action === '登入' ? 'bg-green-100 text-green-700' : 
@@ -1273,7 +1276,6 @@ export default function RegistrationApp() {
                        </thead>
                        <tbody className="divide-y divide-gray-100">
                            {resetRequests.map(r => (
-                               // [修改] 根據 is_finish 欄位判斷是否反灰 (處理完畢)
                                <tr key={r.id} className={`transition-colors ${r.is_finish ? 'bg-gray-100 opacity-50 select-none' : 'hover:bg-gray-50'}`}>
                                    <td className="p-3 font-bold text-gray-800">{r.user_name}</td>
                                    <td className="p-3 font-mono text-gray-500">{r.id_last4}</td>
@@ -1284,7 +1286,6 @@ export default function RegistrationApp() {
                                          r.status==='completed' ? 'bg-green-100 text-green-700 border-green-200' : 
                                          'bg-red-100 text-red-700 border-red-200'
                                        }`}>
-                                           {/* [修改] 狀態文字對應 */}
                                            {r.status === 'pending' ? '待審核' : r.status === 'completed' ? '已完成' : '已駁回'}
                                        </span>
                                    </td>
@@ -1299,7 +1300,6 @@ export default function RegistrationApp() {
                                                </button>
                                            </div>
                                        )}
-                                       {/* [新增] 完成/駁回後的靜態顯示 */}
                                        {r.status === 'completed' && <span className="text-green-600 font-bold text-xs flex items-center"><Check className="w-4 h-4 mr-1"/>已完成</span>}
                                        {r.status === 'rejected' && <span className="text-red-600 font-bold text-xs flex items-center"><X className="w-4 h-4 mr-1"/>已駁回</span>}
                                    </td>
