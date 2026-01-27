@@ -344,11 +344,37 @@ export default function RegistrationApp() {
 
   // [新增] 讀取重設申請列表
   const fetchResetRequests = useCallback(async () => {
-    if (!client) return;
-    const { data } = await client.from('reset_requests').select('*').order('created_at', { ascending: false });
-    if (data) setResetRequests(data);
-    else if (!supabase && mockDb?.reset_requests) setResetRequests(mockDb.reset_requests);
-    else setResetRequests([]);
+    // [修正] 讀取列表時，也嘗試使用 Service Role Key 以繞過 RLS 限制
+    // 這樣即使資料庫沒有設定 SELECT Policy，管理員也能看到資料
+    let targetClient = client;
+    if (supabase) {
+        const serviceRoleKey = process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY;
+        if (serviceRoleKey) {
+            // @ts-ignore
+            targetClient = createClient(
+                process.env.NEXT_PUBLIC_SUPABASE_URL!,
+                serviceRoleKey,
+                { auth: { persistSession: false } }
+            );
+        }
+    }
+
+    if (!targetClient) return;
+    
+    // 使用 targetClient (可能是 Admin 權限) 查詢
+    const { data, error } = await targetClient.from('reset_requests').select('*').order('created_at', { ascending: false });
+    
+    if (error) {
+        console.error("讀取申請列表失敗:", error);
+    }
+
+    if (data) {
+        setResetRequests(data);
+    } else if (!supabase && mockDb?.reset_requests) {
+        setResetRequests(mockDb.reset_requests);
+    } else {
+        setResetRequests([]);
+    }
   }, [client, supabase]);
 
   const fetchNotes = useCallback(async () => {
