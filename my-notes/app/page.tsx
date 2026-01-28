@@ -20,7 +20,8 @@ import {
   Menu,
   ChevronRight,
   Download,
-  Activity
+  Activity,
+  Filter // 新增圖標
 } from 'lucide-react';
 
 // ==========================================
@@ -37,6 +38,7 @@ import {
 // [步驟 1] 部署到 Vercel 時，請解除下方這一行的註解
 // import { createClient as _createSupabaseClient } from '@supabase/supabase-js';
 import { createClient as _createSupabaseClient } from '@supabase/supabase-js';
+
 // --- 設定控制開關 ---
 // [步驟 2] 部署時，請將 true 改為 false
 const useMock = false; 
@@ -50,8 +52,7 @@ let mockDb: any = {
       { id: 101, team_big: '文殊隊', team_small: '第3小隊', monastery: '高雄', real_name: '王小明', dharma_name: '法明', action_type: '新增', start_date: '2025-02-15', start_time: '09:00', end_date: '2025-02-15', end_time: '17:00', need_help: false, memo: '我是王小明的第一筆紀錄', id_2: '5566', sign_name: '王小明 (5566)', is_deleted: false, created_at: new Date('2025-01-15T10:00:00').toISOString(), user_id: 'user-2' },
       { id: 102, team_big: '地藏隊', team_small: '第1小隊', monastery: '花蓮', real_name: '王小明', dharma_name: '法明', action_type: '異動', start_date: '2023-03-01', start_time: '08:30', end_date: '2023-03-03', end_time: '16:00', need_help: true, memo: '已結束的行程', id_2: '5566', sign_name: '王小明 (5566)', is_deleted: false, created_at: new Date('2023-01-20T14:30:00').toISOString(), user_id: 'user-2' }
   ],
-  // [修改] 更新系統名稱
-  bulletins: [{ id: 1, content: '🎉 歡迎使用書記預先登記系統 (v4.5)！\n系統已完成更名與優化。', image_url: '', created_at: new Date().toISOString() }],
+  bulletins: [{ id: 1, content: '🎉 歡迎使用書記預先登記系統 (v4.7)！\n已新增「系統歷程」獨立頁籤與日期篩選功能。', image_url: '', created_at: new Date().toISOString() }],
   user_permissions: [
       { id: 1, email: 'admin@example.com', uid: 'user-1', is_admin: true, is_disabled: false, user_name: 'admin', id_last4: '1111', created_at: new Date().toISOString() },
       { id: 2, email: 'user@example.com', uid: 'user-2', is_admin: false, is_disabled: false, user_name: '王小明', id_last4: '5566', created_at: new Date().toISOString() }
@@ -64,7 +65,9 @@ let mockDb: any = {
   login_history: [
       { id: 1, real_name: 'admin', id_last4: '1111', action: '登入', created_at: new Date('2023-10-01T08:00:00').toISOString() },
       { id: 2, real_name: '王小明', id_last4: '5566', action: '註冊', created_at: new Date('2025-01-15T10:00:00').toISOString() },
-      { id: 3, real_name: '王小明', id_last4: '5566', action: '登入', created_at: new Date('2025-01-15T10:05:00').toISOString() }
+      { id: 3, real_name: '王小明', id_last4: '5566', action: '登入', created_at: new Date('2025-01-15T10:05:00').toISOString() },
+      // 增加今天的紀錄以便測試預設篩選
+      { id: 4, real_name: 'admin', id_last4: '1111', action: '登入', created_at: new Date().toISOString() } 
   ], 
   system_options: [
     { id: 1, category: 'team_big', value: '觀音隊' }, { id: 2, category: 'team_big', value: '文殊隊' },
@@ -280,7 +283,9 @@ export default function RegistrationApp() {
   const [resetRequests, setResetRequests] = useState<any[]>([]); 
   const [sortedNotes, setSortedNotes] = useState<any[]>([]);
   const [loginHistory, setLoginHistory] = useState<any[]>([]);
-  const [showHistory, setShowHistory] = useState(false); 
+  
+  // [新增] 歷程記錄的日期篩選狀態
+  const [historyFilterDate, setHistoryFilterDate] = useState('');
 
   const FAKE_DOMAIN = "@my-notes.com";
 
@@ -297,7 +302,9 @@ export default function RegistrationApp() {
   const [isAdmin, setIsAdmin] = useState(false);
   
   const [authMode, setAuthMode] = useState<'login' | 'signup' | 'forgot'>('login');
-  const [activeTab, setActiveTab] = useState<'form' | 'history' | 'admin_data' | 'admin_users' | 'admin_settings' | 'admin_requests' | 'bulletin'>('bulletin');
+  
+  // [修改] activeTab 加入 'admin_history' 類型
+  const [activeTab, setActiveTab] = useState<'form' | 'history' | 'admin_data' | 'admin_history' | 'admin_users' | 'admin_settings' | 'admin_requests' | 'bulletin'>('bulletin');
   const [filterMonth, setFilterMonth] = useState('');
 
   const [bulletinText, setBulletinText] = useState('');
@@ -326,10 +333,12 @@ export default function RegistrationApp() {
   const userRef = useRef(user);
   useEffect(() => { userRef.current = user; }, [user]);
 
+  // [修改] 初始化時，設定 historyFilterDate 為今日
   useEffect(() => {
     const d = new Date(); 
     const dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
     setMinStartDate(dateStr);
+    setHistoryFilterDate(dateStr); // 設定歷程預設篩選為今日
   }, []);
 
   useEffect(() => {
@@ -499,7 +508,9 @@ export default function RegistrationApp() {
             targetClient = _createSupabaseClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceRoleKey, { auth: { persistSession: false } });
         }
     }
-    const { data, error } = await targetClient.from('login_history').select('*').order('created_at', { ascending: false }).limit(50);
+    // [注意] 這裡改為一次拉取較多筆數，再由前端 filter 處理 (因為 API 簡單)
+    // 更好的做法是在後端 filter，但為了保持代碼一致性先這樣做
+    const { data, error } = await targetClient.from('login_history').select('*').order('created_at', { ascending: false }).limit(200);
     if (error) console.error("讀取歷程失敗:", error);
     if (data) setLoginHistory(data);
     else if (useMock && mockDb?.login_history) setLoginHistory(mockDb.login_history);
@@ -531,14 +542,16 @@ export default function RegistrationApp() {
   };
 
   const exportToExcel = () => {
-    if (showHistory) {
-      if (loginHistory.length === 0) return alert("無歷程資料");
-      // [修改] 匯出加入 ID後4碼
+    // [修改] 匯出歷程時，也應用日期篩選
+    if (activeTab === 'admin_history') {
+      const filteredHistory = loginHistory.filter(h => h.created_at.startsWith(historyFilterDate));
+      
+      if (filteredHistory.length === 0) return alert("無該日期的歷程資料");
       const csvContent = "\ufeff" + ["使用者姓名", "ID後4碼", "動作", "操作時間"].join(',') + '\n' + 
-          loginHistory.map(h => `${h.real_name},${h.id_last4 || ''},${h.action},${formatDateTime(h.created_at)}`).join('\n');
+          filteredHistory.map(h => `${h.real_name},${h.id_last4 || ''},${h.action},${formatDateTime(h.created_at)}`).join('\n');
       const link = document.createElement('a');
       link.href = URL.createObjectURL(new Blob([csvContent], { type: 'text/csv;charset=utf-8;' }));
-      link.download = 'login_history.csv';
+      link.download = `login_history_${historyFilterDate}.csv`;
       link.click();
       return;
     }
@@ -802,9 +815,23 @@ export default function RegistrationApp() {
     if(formData.start_date < minStartDate) return alert('日期錯誤');
     const signName = `${getDisplayNameOnly(user.email||'')} (${getIdLast4FromEmail(user.email||'')})`;
     const payload = {...formData, user_id: user.id, id_2: getIdLast4FromEmail(user.email||''), sign_name: signName };
+    
     if(!useMock) {
         const { error } = await supabase.from('notes').insert([payload]);
-        if(!error) { alert('成功'); window.location.reload(); } else alert('失敗');
+        if(!error) { 
+            alert('成功'); 
+            window.location.reload(); 
+        } else { 
+            alert('失敗');
+            // [新增] 當錯誤時清空表單
+            setFormData({
+                team_big: '', team_small: '', monastery: '', 
+                real_name: getDisplayNameOnly(user.email || ''), 
+                dharma_name: '', action_type: '新增', 
+                start_date: '', start_time: '', end_date: '', end_time: '',
+                need_help: false, memo: ''
+            });
+        }
     } else if (useMock && mockDb) {
         if(!mockDb.notes) mockDb.notes = [];
         mockDb.notes.push({...payload, id: Date.now(), created_at: new Date().toISOString() });
@@ -842,10 +869,8 @@ export default function RegistrationApp() {
           if (activeTab === 'admin_users') fetchAllUsers();
           if (activeTab === 'admin_settings') fetchOptions();
           if (activeTab === 'admin_requests') fetchResetRequests(); 
-          if (activeTab === 'admin_data') {
-             fetchNotes();
-             fetchLoginHistory();
-          }
+          if (activeTab === 'admin_data') fetchNotes();
+          if (activeTab === 'admin_history') fetchLoginHistory(); // 載入歷程
       }
   }, [activeTab, isAdmin, fetchAllUsers, fetchOptions, fetchResetRequests, fetchNotes, fetchLoginHistory]);
 
@@ -866,7 +891,14 @@ export default function RegistrationApp() {
   const handleStartDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
     if (val && val < minStartDate) {
-        setFormData(prev => ({ ...prev, start_date: minStartDate }));
+        alert('日期錯誤，修正為今日'); 
+        setFormData(prev => {
+            const newData = { ...prev, start_date: minStartDate };
+            if (prev.end_date && prev.end_date < minStartDate) {
+                newData.end_date = minStartDate;
+            }
+            return newData;
+        });
         return;
     }
     setFormData(prev => {
@@ -882,6 +914,7 @@ export default function RegistrationApp() {
       const val = e.target.value;
       const limit = formData.start_date || minStartDate;
       if (val && val < limit) {
+           alert('日期錯誤，不能早於起日，已修正。'); 
            setFormData(prev => ({ ...prev, end_date: limit }));
            return;
       }
@@ -916,7 +949,7 @@ export default function RegistrationApp() {
     <div className="min-h-screen bg-amber-50 flex flex-col items-center py-10 px-4 font-sans text-gray-900">
       <h1 className="text-3xl font-extrabold text-amber-900 mb-8 tracking-wide flex items-center gap-3">
         <Shield className="w-8 h-8 text-amber-600" />
-        書記預先登記系統 (v4.5)
+        書記預先登記系統 (v4.7)
       </h1>
 
       {!user ? (
@@ -1002,6 +1035,7 @@ export default function RegistrationApp() {
                <>
                  <div className="w-px bg-amber-300 mx-1 hidden md:block"></div>
                  {renderTab('admin_data', '資料', FileText)}
+                 {renderTab('admin_history', '歷程', Activity)} {/* [新增] 獨立歷程頁籤 */}
                  {renderTab('admin_users', '用戶', Users)}
                  {renderTab('admin_requests', '審核', Shield, resetRequests.some(r=>r.status==='pending'))}
                  {renderTab('admin_settings', '設定', Settings)}
@@ -1192,18 +1226,25 @@ export default function RegistrationApp() {
               </div>
            )}
 
-           {activeTab === 'admin_data' && isAdmin && (
+           {/* [新增] 獨立的「系統歷程」頁籤 */}
+           {activeTab === 'admin_history' && isAdmin && (
               <div className="bg-white p-6 rounded-2xl shadow-sm overflow-hidden">
                  <div className="flex justify-between items-center mb-6">
                    <h3 className="font-bold text-gray-700 text-lg flex items-center gap-2">
-                       {showHistory ? <Activity className="w-5 h-5"/> : <FileText className="w-5 h-5"/>} 
-                       {showHistory ? '系統歷程' : '資料總表'}
+                       <Activity className="w-5 h-5"/> 系統歷程
                    </h3>
-                   <div className="flex gap-3">
-                       <button onClick={() => setShowHistory(!showHistory)} className="bg-blue-50 text-blue-600 px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-blue-100 transition-colors">
-                           {showHistory ? <FileText className="w-4 h-4"/> : <Activity className="w-4 h-4"/>}
-                           {showHistory ? '查看報名資料' : '查看系統歷程'}
-                       </button>
+                   <div className="flex gap-3 items-center">
+                       {/* 日期篩選器 */}
+                       <div className="flex items-center gap-2 bg-gray-50 px-3 py-2 rounded-lg border border-gray-200">
+                           <Filter className="w-4 h-4 text-gray-500"/>
+                           <span className="text-sm text-gray-500">篩選日期:</span>
+                           <input 
+                               type="date" 
+                               value={historyFilterDate}
+                               onChange={(e) => setHistoryFilterDate(e.target.value)}
+                               className="bg-transparent text-sm text-gray-700 font-medium outline-none"
+                           />
+                       </div>
                        <button onClick={exportToExcel} className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-colors">
                          <Download className="w-4 h-4"/> 匯出 Excel
                        </button>
@@ -1211,96 +1252,114 @@ export default function RegistrationApp() {
                  </div>
                  
                  <div className="overflow-x-auto">
-                   {showHistory ? (
-                       <table className="w-full text-sm text-left">
-                           <thead className="bg-gray-50 text-gray-600">
-                               <tr>
-                                   <th className="p-3 rounded-l-lg">使用者</th>
-                                   <th className="p-3">動作</th>
-                                   <th className="p-3 rounded-r-lg">時間</th>
+                   <table className="w-full text-sm text-left">
+                       <thead className="bg-gray-50 text-gray-600">
+                           <tr>
+                               <th className="p-3 rounded-l-lg">使用者</th>
+                               <th className="p-3">動作</th>
+                               <th className="p-3 rounded-r-lg">時間</th>
+                           </tr>
+                       </thead>
+                       <tbody className="divide-y divide-gray-100">
+                           {/* 根據日期篩選歷程 */}
+                           {loginHistory.filter(h => h.created_at.startsWith(historyFilterDate)).map((h, i) => (
+                               <tr key={i} className="hover:bg-gray-50/50">
+                                   <td className="p-3 font-medium text-gray-800">
+                                       {h.real_name || h.uid}
+                                       {h.id_last4 && <span className="text-gray-400 text-xs ml-1">({h.id_last4})</span>}
+                                   </td>
+                                   <td className="p-3">
+                                       <span className={`px-2 py-1 rounded-full text-xs font-bold ${
+                                           h.action === '登入' ? 'bg-green-100 text-green-700' : 
+                                           h.action === '登出' ? 'bg-gray-100 text-gray-700' : 
+                                           'bg-blue-100 text-blue-700'
+                                       }`}>
+                                           {h.action}
+                                       </span>
+                                   </td>
+                                   <td className="p-3 text-gray-500 font-mono text-xs">{formatDateTime(h.created_at)}</td>
                                </tr>
-                           </thead>
-                           <tbody className="divide-y divide-gray-100">
-                               {loginHistory.map((h, i) => (
-                                   <tr key={i} className="hover:bg-gray-50/50">
-                                       <td className="p-3 font-medium text-gray-800">
-                                           {h.real_name || h.uid}
-                                           {h.id_last4 && <span className="text-gray-400 text-xs ml-1">({h.id_last4})</span>}
-                                       </td>
-                                       <td className="p-3">
-                                           <span className={`px-2 py-1 rounded-full text-xs font-bold ${
-                                               h.action === '登入' ? 'bg-green-100 text-green-700' : 
-                                               h.action === '登出' ? 'bg-gray-100 text-gray-700' : 
-                                               'bg-blue-100 text-blue-700'
-                                           }`}>
-                                               {h.action}
-                                           </span>
-                                       </td>
-                                       <td className="p-3 text-gray-500 font-mono text-xs">{formatDateTime(h.created_at)}</td>
-                                   </tr>
-                               ))}
-                               {loginHistory.length === 0 && <tr><td colSpan={3} className="p-8 text-center text-gray-400">目前沒有歷程紀錄</td></tr>}
-                           </tbody>
-                       </table>
-                   ) : (
-                       <table className="w-full text-sm text-left">
-                          <thead className="bg-gray-50 text-gray-600">
-                            <tr>
-                              <th className="p-3 rounded-l-lg">大隊</th>
-                              <th className="p-3">小隊</th>
-                              <th className="p-3">姓名</th>
-                              <th className="p-3">法名</th>
-                              <th className="p-3 text-center">狀態</th> 
-                              <th className="p-3">發心起日/時</th>
-                              <th className="p-3">發心迄日/時</th>
-                              <th className="p-3">發心日數</th>
-                              <th className="p-3 rounded-r-lg">填表人</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-gray-100">
-                            {sortedNotes.map(n=>{
-                              const status = getNoteStatus(n);
-                              const isInactive = status === 'deleted' || status === 'completed';
-                              
-                              return (
-                              <tr key={n.id} className={`hover:bg-gray-50/50 transition-colors ${isInactive ? 'text-gray-400' : ''}`}>
-                                <td className="p-3 font-medium text-gray-800">{n.team_big}</td>
-                                <td className="p-3 text-gray-600">{n.team_small}</td>
-                                <td className="p-3">{n.real_name}</td>
-                                <td className="p-3 text-gray-600">{n.dharma_name || '-'}</td>
-                                
-                                <td className="p-3 text-center">
-                                    <span className={`px-2 py-1 rounded text-xs font-bold ${
-                                        status === 'deleted' ? 'bg-red-100 text-red-700' : 
-                                        status === 'completed' ? 'bg-gray-200 text-gray-600' :
-                                        n.action_type === '新增' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'
-                                    }`}>
-                                        {status === 'deleted' ? '已刪除' : status === 'completed' ? '已圓滿' : n.action_type}
-                                    </span>
-                                </td>
+                           ))}
+                           {loginHistory.filter(h => h.created_at.startsWith(historyFilterDate)).length === 0 && (
+                               <tr><td colSpan={3} className="p-8 text-center text-gray-400">
+                                   {historyFilterDate === minStartDate ? '今日尚無歷程紀錄' : '該日期無歷程紀錄'}
+                               </td></tr>
+                           )}
+                       </tbody>
+                   </table>
+                 </div>
+              </div>
+           )}
 
-                                <td className="p-3">
-                                  <div className="font-medium">{n.start_date}</div>
-                                  <div className="text-xs opacity-70">{n.start_time}</div>
-                                </td>
-                                
-                                <td className="p-3">
-                                  <div className="font-medium">{n.end_date}</div>
-                                  <div className="text-xs opacity-70">{n.end_time}</div>
-                                </td>
-                                
-                                <td className="p-3 text-center">
-                                  <span className="bg-amber-100 text-amber-800 px-2 py-1 rounded font-bold text-xs">
-                                    {calculateDuration(n.start_date, n.end_date)} 天
-                                  </span>
-                                </td>
+           {/* [修改] 資料總表：移除歷程切換功能，只顯示資料 */}
+           {activeTab === 'admin_data' && isAdmin && (
+              <div className="bg-white p-6 rounded-2xl shadow-sm overflow-hidden">
+                 <div className="flex justify-between items-center mb-6">
+                   <h3 className="font-bold text-gray-700 text-lg flex items-center gap-2">
+                       <FileText className="w-5 h-5"/> 資料總表
+                   </h3>
+                   <button onClick={exportToExcel} className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-colors">
+                     <Download className="w-4 h-4"/> 匯出 Excel
+                   </button>
+                 </div>
+                 <div className="overflow-x-auto">
+                   <table className="w-full text-sm text-left">
+                      <thead className="bg-gray-50 text-gray-600">
+                        <tr>
+                          <th className="p-3 rounded-l-lg">大隊</th>
+                          <th className="p-3">小隊</th>
+                          <th className="p-3">姓名</th>
+                          <th className="p-3">法名</th>
+                          <th className="p-3 text-center">狀態</th> 
+                          <th className="p-3">發心起日/時</th>
+                          <th className="p-3">發心迄日/時</th>
+                          <th className="p-3">發心日數</th>
+                          <th className="p-3 rounded-r-lg">填表人</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {sortedNotes.map(n=>{
+                          const status = getNoteStatus(n);
+                          const isInactive = status === 'deleted' || status === 'completed';
+                          
+                          return (
+                          <tr key={n.id} className={`hover:bg-gray-50/50 transition-colors ${isInactive ? 'text-gray-400' : ''}`}>
+                            <td className="p-3 font-medium text-gray-800">{n.team_big}</td>
+                            <td className="p-3 text-gray-600">{n.team_small}</td>
+                            <td className="p-3">{n.real_name}</td>
+                            <td className="p-3 text-gray-600">{n.dharma_name || '-'}</td>
+                            
+                            <td className="p-3 text-center">
+                                <span className={`px-2 py-1 rounded text-xs font-bold ${
+                                    status === 'deleted' ? 'bg-red-100 text-red-700' : 
+                                    status === 'completed' ? 'bg-gray-200 text-gray-600' :
+                                    n.action_type === '新增' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'
+                                }`}>
+                                    {status === 'deleted' ? '已刪除' : status === 'completed' ? '已圓滿' : n.action_type}
+                                </span>
+                            </td>
 
-                                <td className="p-3 text-blue-500 font-mono text-xs">{n.sign_name}</td>
-                              </tr>
-                            )})}
-                          </tbody>
-                       </table>
-                   )}
+                            <td className="p-3">
+                              <div className="font-medium">{n.start_date}</div>
+                              <div className="text-xs opacity-70">{n.start_time}</div>
+                            </td>
+                            
+                            <td className="p-3">
+                              <div className="font-medium">{n.end_date}</div>
+                              <div className="text-xs opacity-70">{n.end_time}</div>
+                            </td>
+                            
+                            <td className="p-3 text-center">
+                              <span className="bg-amber-100 text-amber-800 px-2 py-1 rounded font-bold text-xs">
+                                {calculateDuration(n.start_date, n.end_date)} 天
+                              </span>
+                            </td>
+
+                            <td className="p-3 text-blue-500 font-mono text-xs">{n.sign_name}</td>
+                          </tr>
+                        )})}
+                      </tbody>
+                   </table>
                  </div>
               </div>
            )}
@@ -1327,7 +1386,6 @@ export default function RegistrationApp() {
                        </thead>
                        <tbody className="divide-y divide-gray-100">
                            {resetRequests.map(r => (
-                               // [修改] 根據 is_finish 欄位判斷是否反灰 (處理完畢)
                                <tr key={r.id} className={`transition-colors ${r.is_finish ? 'bg-gray-100 opacity-50 select-none' : 'hover:bg-gray-50'}`}>
                                    <td className="p-3 font-bold text-gray-800">{r.user_name}</td>
                                    <td className="p-3 font-mono text-gray-500">{r.id_last4}</td>
@@ -1338,7 +1396,6 @@ export default function RegistrationApp() {
                                          r.status==='completed' ? 'bg-green-100 text-green-700 border-green-200' : 
                                          'bg-red-100 text-red-700 border-red-200'
                                        }`}>
-                                           {/* [修改] 狀態文字對應 */}
                                            {r.status === 'pending' ? '待審核' : r.status === 'completed' ? '已完成' : '已駁回'}
                                        </span>
                                    </td>
@@ -1353,7 +1410,6 @@ export default function RegistrationApp() {
                                                </button>
                                            </div>
                                        )}
-                                       {/* [新增] 完成/駁回後的靜態顯示 */}
                                        {r.status === 'completed' && <span className="text-green-600 font-bold text-xs flex items-center"><Check className="w-4 h-4 mr-1"/>已完成</span>}
                                        {r.status === 'rejected' && <span className="text-red-600 font-bold text-xs flex items-center"><X className="w-4 h-4 mr-1"/>已駁回</span>}
                                    </td>
