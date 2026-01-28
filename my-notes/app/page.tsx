@@ -51,7 +51,7 @@ let mockDb: any = {
       { id: 101, team_big: '文殊隊', team_small: '第3小隊', monastery: '高雄', real_name: '王小明', dharma_name: '法明', action_type: '新增', start_date: '2025-02-15', start_time: '09:00', end_date: '2025-02-15', end_time: '17:00', need_help: false, memo: '我是王小明的第一筆紀錄', id_2: '5566', sign_name: '王小明 (5566)', is_deleted: false, created_at: new Date('2025-01-15T10:00:00').toISOString(), user_id: 'user-2' },
       { id: 102, team_big: '地藏隊', team_small: '第1小隊', monastery: '花蓮', real_name: '王小明', dharma_name: '法明', action_type: '異動', start_date: '2023-03-01', start_time: '08:30', end_date: '2023-03-03', end_time: '16:00', need_help: true, memo: '已結束的行程', id_2: '5566', sign_name: '王小明 (5566)', is_deleted: false, created_at: new Date('2023-01-20T14:30:00').toISOString(), user_id: 'user-2' }
   ],
-  bulletins: [{ id: 1, content: '🎉 歡迎使用書記預先登記系統 (v4.9)！\n修正了介面文字提示。', image_url: '', created_at: new Date().toISOString() }],
+  bulletins: [{ id: 1, content: '🎉 歡迎使用書記預先登記系統 (v5.0)！\n紀錄卡片已加入填表時間。', image_url: '', created_at: new Date().toISOString() }],
   user_permissions: [
       { id: 1, email: 'admin@example.com', uid: 'user-1', is_admin: true, is_disabled: false, user_name: 'admin', id_last4: '1111', created_at: new Date().toISOString() },
       { id: 2, email: 'user@example.com', uid: 'user-2', is_admin: false, is_disabled: false, user_name: '王小明', id_last4: '5566', created_at: new Date().toISOString() }
@@ -938,7 +938,7 @@ export default function RegistrationApp() {
     <div className="min-h-screen bg-amber-50 flex flex-col items-center py-10 px-4 font-sans text-gray-900">
       <h1 className="text-3xl font-extrabold text-amber-900 mb-8 tracking-wide flex items-center gap-3">
         <Shield className="w-8 h-8 text-amber-600" />
-        書記預先登記系統 (v4.9)
+        書記預先登記系統 (v5.0)
       </h1>
 
       {!user ? (
@@ -1176,6 +1176,8 @@ export default function RegistrationApp() {
                           <div className="flex items-center gap-2"><User className="w-4 h-4 text-gray-400"/> {n.real_name} {n.dharma_name ? `(${n.dharma_name})` : ''}</div>
                           <div className="flex items-center gap-2"><Calendar className="w-4 h-4 text-gray-400"/> 起: {n.start_date} {n.start_time}</div>
                           <div className="flex items-center gap-2"><Calendar className="w-4 h-4 text-gray-400"/> 迄: {n.end_date} {n.end_time}</div>
+                          {/* [新增] 填表時間欄位 */}
+                          <div className="flex items-center gap-2"><Edit className="w-4 h-4 text-gray-400"/> 填表: {formatDateTime(n.created_at)}</div>
                         </div>
 
                         <div className="flex justify-end items-center pt-2 border-t border-gray-100 mt-2">
