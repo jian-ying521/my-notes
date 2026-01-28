@@ -50,7 +50,8 @@ let mockDb: any = {
       { id: 101, team_big: '文殊隊', team_small: '第3小隊', monastery: '高雄', real_name: '王小明', dharma_name: '法明', action_type: '新增', start_date: '2025-02-15', start_time: '09:00', end_date: '2025-02-15', end_time: '17:00', need_help: false, memo: '我是王小明的第一筆紀錄', id_2: '5566', sign_name: '王小明 (5566)', is_deleted: false, created_at: new Date('2025-01-15T10:00:00').toISOString(), user_id: 'user-2' },
       { id: 102, team_big: '地藏隊', team_small: '第1小隊', monastery: '花蓮', real_name: '王小明', dharma_name: '法明', action_type: '異動', start_date: '2023-03-01', start_time: '08:30', end_date: '2023-03-03', end_time: '16:00', need_help: true, memo: '已結束的行程', id_2: '5566', sign_name: '王小明 (5566)', is_deleted: false, created_at: new Date('2023-01-20T14:30:00').toISOString(), user_id: 'user-2' }
   ],
-  bulletins: [{ id: 1, content: '🎉 歡迎使用一一報名系統 (v4.3)！\n歷程記錄已包含 ID 後 4 碼。', image_url: '', created_at: new Date().toISOString() }],
+  // [修改] 更新系統名稱
+  bulletins: [{ id: 1, content: '🎉 歡迎使用書記預先登記系統 (v4.5)！\n系統已完成更名與優化。', image_url: '', created_at: new Date().toISOString() }],
   user_permissions: [
       { id: 1, email: 'admin@example.com', uid: 'user-1', is_admin: true, is_disabled: false, user_name: 'admin', id_last4: '1111', created_at: new Date().toISOString() },
       { id: 2, email: 'user@example.com', uid: 'user-2', is_admin: false, is_disabled: false, user_name: '王小明', id_last4: '5566', created_at: new Date().toISOString() }
@@ -59,7 +60,7 @@ let mockDb: any = {
       { id: 101, user_name: '王小明', id_last4: '5566', uid: 'user-2', status: 'pending', is_finish: false, created_at: new Date().toISOString() }
   ],
   users: [],
-  // 模擬的登入歷史紀錄 (加入 id_last4)
+  // 模擬的登入歷史紀錄
   login_history: [
       { id: 1, real_name: 'admin', id_last4: '1111', action: '登入', created_at: new Date('2023-10-01T08:00:00').toISOString() },
       { id: 2, real_name: '王小明', id_last4: '5566', action: '註冊', created_at: new Date('2025-01-15T10:00:00').toISOString() },
@@ -358,17 +359,14 @@ export default function RegistrationApp() {
     setSortedNotes(sorted);
   }, [notes]);
 
-  // [修改] 歷程記錄函式：加入 id_last4 欄位
   const logToHistory = useCallback(async (action: string, targetUser: any) => {
       if (!targetUser) return;
       const name = getDisplayNameOnly(targetUser.email || '');
-      // const uid = targetUser.id; // 暫時移除 uid
       const idLast4 = getIdLast4FromEmail(targetUser.email || '');
 
-      // 修正：Payload 欄位名稱對應 Supabase 資料表 (real_name, id_last4, action, created_at)
       const payload = { 
           real_name: name, 
-          id_last4: idLast4, // 新增此欄位
+          id_last4: idLast4, 
           action: action, 
           created_at: new Date().toISOString() 
       };
@@ -384,7 +382,6 @@ export default function RegistrationApp() {
           const serviceKey = process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY;
           const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
 
-          // 使用 Fetch + REST API 強制寫入
           if (serviceKey && url) {
               const res = await fetch(`${url}/rest/v1/login_history`, {
                   method: 'POST',
@@ -865,6 +862,32 @@ export default function RegistrationApp() {
     init();
   }, [supabase, fetchNotes, fetchBulletins, fetchOptions, checkUserStatus]);
 
+  // [新增] 安全的 Date Change Handler
+  const handleStartDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    if (val && val < minStartDate) {
+        setFormData(prev => ({ ...prev, start_date: minStartDate }));
+        return;
+    }
+    setFormData(prev => {
+        const newData = { ...prev, start_date: val };
+        if (prev.end_date && prev.end_date < val) {
+            newData.end_date = val;
+        }
+        return newData;
+    });
+  };
+
+  const handleEndDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const val = e.target.value;
+      const limit = formData.start_date || minStartDate;
+      if (val && val < limit) {
+           setFormData(prev => ({ ...prev, end_date: limit }));
+           return;
+      }
+      setFormData(prev => ({ ...prev, end_date: val }));
+  };
+
   // UI Components
   const openPwdModal = (target: any) => { setPwdTargetUser(target); setNewPassword(''); setShowPwdModal(true); };
 
@@ -893,7 +916,7 @@ export default function RegistrationApp() {
     <div className="min-h-screen bg-amber-50 flex flex-col items-center py-10 px-4 font-sans text-gray-900">
       <h1 className="text-3xl font-extrabold text-amber-900 mb-8 tracking-wide flex items-center gap-3">
         <Shield className="w-8 h-8 text-amber-600" />
-        一一報名系統 (v4.3)
+        書記預先登記系統 (v4.5)
       </h1>
 
       {!user ? (
@@ -1051,8 +1074,36 @@ export default function RegistrationApp() {
                     <ChevronRight className="w-4 h-4 absolute right-3 top-3 text-gray-400 rotate-90 pointer-events-none" />
                   </div>
                   </div>
-                  <div className="lg:col-span-2 flex flex-col gap-2"><label className="text-sm font-bold text-gray-600">7. 起日/時*</label><div className="flex gap-2"><input type="date" min={minStartDate} className="border border-gray-300 p-2.5 rounded-lg flex-1" value={formData.start_date} onChange={e=>setFormData({...formData, start_date:e.target.value})} /><input type="time" className="border border-gray-300 p-2.5 rounded-lg flex-1" value={formData.start_time} onChange={e=>setFormData({...formData, start_time:e.target.value})} /></div></div>
-                  <div className="lg:col-span-2 flex flex-col gap-2"><label className="text-sm font-bold text-gray-600">8. 迄日/時*</label><div className="flex gap-2"><input type="date" min={formData.start_date} className="border border-gray-300 p-2.5 rounded-lg flex-1" value={formData.end_date} onChange={e=>setFormData({...formData, end_date:e.target.value})} /><input type="time" className="border border-gray-300 p-2.5 rounded-lg flex-1" value={formData.end_time} onChange={e=>setFormData({...formData, end_time:e.target.value})} /></div></div>
+                  <div className="lg:col-span-2 flex flex-col gap-2"><label className="text-sm font-bold text-gray-600">7. 起日/時*</label><div className="flex gap-2">
+                    <input 
+                      type="date" 
+                      min={minStartDate} 
+                      className="border border-gray-300 p-2.5 rounded-lg flex-1" 
+                      value={formData.start_date} 
+                      onChange={handleStartDateChange} 
+                    />
+                    <input 
+                      type="time" 
+                      className="border border-gray-300 p-2.5 rounded-lg flex-1" 
+                      value={formData.start_time} 
+                      onChange={e=>setFormData({...formData, start_time:e.target.value})} 
+                    />
+                  </div></div>
+                  <div className="lg:col-span-2 flex flex-col gap-2"><label className="text-sm font-bold text-gray-600">8. 迄日/時*</label><div className="flex gap-2">
+                    <input 
+                      type="date" 
+                      min={formData.start_date || minStartDate} 
+                      className="border border-gray-300 p-2.5 rounded-lg flex-1" 
+                      value={formData.end_date} 
+                      onChange={handleEndDateChange} 
+                    />
+                    <input 
+                      type="time" 
+                      className="border border-gray-300 p-2.5 rounded-lg flex-1" 
+                      value={formData.end_time} 
+                      onChange={e=>setFormData({...formData, end_time:e.target.value})} 
+                    />
+                  </div></div>
                   <div className="md:col-span-4 bg-gray-50 p-3 rounded-lg"><label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" className="w-5 h-5 text-amber-600 rounded focus:ring-amber-500" checked={formData.need_help} onChange={e=>setFormData({...formData, need_help:e.target.checked})} /> <span className="font-bold text-gray-700">9. 需協助報名 (是)</span></label></div>
                   <div className="md:col-span-4"><textarea className="w-full border border-gray-300 p-3 rounded-lg focus:ring-2 focus:ring-amber-500 outline-none" placeholder="10. 備註 (選填)" value={formData.memo} onChange={e=>setFormData({...formData, memo:e.target.value})}></textarea></div>
                </div>
@@ -1276,6 +1327,7 @@ export default function RegistrationApp() {
                        </thead>
                        <tbody className="divide-y divide-gray-100">
                            {resetRequests.map(r => (
+                               // [修改] 根據 is_finish 欄位判斷是否反灰 (處理完畢)
                                <tr key={r.id} className={`transition-colors ${r.is_finish ? 'bg-gray-100 opacity-50 select-none' : 'hover:bg-gray-50'}`}>
                                    <td className="p-3 font-bold text-gray-800">{r.user_name}</td>
                                    <td className="p-3 font-mono text-gray-500">{r.id_last4}</td>
@@ -1286,6 +1338,7 @@ export default function RegistrationApp() {
                                          r.status==='completed' ? 'bg-green-100 text-green-700 border-green-200' : 
                                          'bg-red-100 text-red-700 border-red-200'
                                        }`}>
+                                           {/* [修改] 狀態文字對應 */}
                                            {r.status === 'pending' ? '待審核' : r.status === 'completed' ? '已完成' : '已駁回'}
                                        </span>
                                    </td>
@@ -1300,6 +1353,7 @@ export default function RegistrationApp() {
                                                </button>
                                            </div>
                                        )}
+                                       {/* [新增] 完成/駁回後的靜態顯示 */}
                                        {r.status === 'completed' && <span className="text-green-600 font-bold text-xs flex items-center"><Check className="w-4 h-4 mr-1"/>已完成</span>}
                                        {r.status === 'rejected' && <span className="text-red-600 font-bold text-xs flex items-center"><X className="w-4 h-4 mr-1"/>已駁回</span>}
                                    </td>
