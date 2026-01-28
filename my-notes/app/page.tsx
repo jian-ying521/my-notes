@@ -21,7 +21,7 @@ import {
   ChevronRight,
   Download,
   Activity,
-  Filter // 新增圖標
+  Filter
 } from 'lucide-react';
 
 // ==========================================
@@ -52,7 +52,7 @@ let mockDb: any = {
       { id: 101, team_big: '文殊隊', team_small: '第3小隊', monastery: '高雄', real_name: '王小明', dharma_name: '法明', action_type: '新增', start_date: '2025-02-15', start_time: '09:00', end_date: '2025-02-15', end_time: '17:00', need_help: false, memo: '我是王小明的第一筆紀錄', id_2: '5566', sign_name: '王小明 (5566)', is_deleted: false, created_at: new Date('2025-01-15T10:00:00').toISOString(), user_id: 'user-2' },
       { id: 102, team_big: '地藏隊', team_small: '第1小隊', monastery: '花蓮', real_name: '王小明', dharma_name: '法明', action_type: '異動', start_date: '2023-03-01', start_time: '08:30', end_date: '2023-03-03', end_time: '16:00', need_help: true, memo: '已結束的行程', id_2: '5566', sign_name: '王小明 (5566)', is_deleted: false, created_at: new Date('2023-01-20T14:30:00').toISOString(), user_id: 'user-2' }
   ],
-  bulletins: [{ id: 1, content: '🎉 歡迎使用書記預先登記系統 (v4.7)！\n已新增「系統歷程」獨立頁籤與日期篩選功能。', image_url: '', created_at: new Date().toISOString() }],
+  bulletins: [{ id: 1, content: '🎉 歡迎使用書記預先登記系統 (v4.8)！\n表單新增了說明文字，並在資料表中加入填表時間。', image_url: '', created_at: new Date().toISOString() }],
   user_permissions: [
       { id: 1, email: 'admin@example.com', uid: 'user-1', is_admin: true, is_disabled: false, user_name: 'admin', id_last4: '1111', created_at: new Date().toISOString() },
       { id: 2, email: 'user@example.com', uid: 'user-2', is_admin: false, is_disabled: false, user_name: '王小明', id_last4: '5566', created_at: new Date().toISOString() }
@@ -283,8 +283,7 @@ export default function RegistrationApp() {
   const [resetRequests, setResetRequests] = useState<any[]>([]); 
   const [sortedNotes, setSortedNotes] = useState<any[]>([]);
   const [loginHistory, setLoginHistory] = useState<any[]>([]);
-  
-  // [新增] 歷程記錄的日期篩選狀態
+  const [showHistory, setShowHistory] = useState(false); 
   const [historyFilterDate, setHistoryFilterDate] = useState('');
 
   const FAKE_DOMAIN = "@my-notes.com";
@@ -303,7 +302,6 @@ export default function RegistrationApp() {
   
   const [authMode, setAuthMode] = useState<'login' | 'signup' | 'forgot'>('login');
   
-  // [修改] activeTab 加入 'admin_history' 類型
   const [activeTab, setActiveTab] = useState<'form' | 'history' | 'admin_data' | 'admin_history' | 'admin_users' | 'admin_settings' | 'admin_requests' | 'bulletin'>('bulletin');
   const [filterMonth, setFilterMonth] = useState('');
 
@@ -333,12 +331,11 @@ export default function RegistrationApp() {
   const userRef = useRef(user);
   useEffect(() => { userRef.current = user; }, [user]);
 
-  // [修改] 初始化時，設定 historyFilterDate 為今日
   useEffect(() => {
     const d = new Date(); 
     const dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
     setMinStartDate(dateStr);
-    setHistoryFilterDate(dateStr); // 設定歷程預設篩選為今日
+    setHistoryFilterDate(dateStr);
   }, []);
 
   useEffect(() => {
@@ -498,7 +495,6 @@ export default function RegistrationApp() {
       else setNotes([]);
   }, [supabase]);
 
-  // [修改] 讀取歷程也使用 real_name
   const fetchLoginHistory = useCallback(async () => {
     let targetClient = supabase;
     if (!useMock) {
@@ -508,8 +504,6 @@ export default function RegistrationApp() {
             targetClient = _createSupabaseClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceRoleKey, { auth: { persistSession: false } });
         }
     }
-    // [注意] 這裡改為一次拉取較多筆數，再由前端 filter 處理 (因為 API 簡單)
-    // 更好的做法是在後端 filter，但為了保持代碼一致性先這樣做
     const { data, error } = await targetClient.from('login_history').select('*').order('created_at', { ascending: false }).limit(200);
     if (error) console.error("讀取歷程失敗:", error);
     if (data) setLoginHistory(data);
@@ -542,7 +536,6 @@ export default function RegistrationApp() {
   };
 
   const exportToExcel = () => {
-    // [修改] 匯出歷程時，也應用日期篩選
     if (activeTab === 'admin_history') {
       const filteredHistory = loginHistory.filter(h => h.created_at.startsWith(historyFilterDate));
       
@@ -559,13 +552,14 @@ export default function RegistrationApp() {
     const data = filterMonth ? sortedNotes.filter(n => n.start_date.startsWith(filterMonth)) : sortedNotes;
     
     if (data.length === 0) return alert("無資料");
-    const csvContent = "\ufeff" + ["大隊,小隊,精舍,姓名,身分證後四碼,法名,動作,狀態,發心起日,發心起時,發心迄日,發心迄時,發心日數,協助,備註,登記時間,填表人,已刪除"].join(',') + '\n' + 
+    // [修改] 增加「填表時間」欄位
+    const csvContent = "\ufeff" + ["大隊,小隊,精舍,姓名,身分證後四碼,法名,動作,狀態,發心起日,發心起時,發心迄日,發心迄時,發心日數,協助,備註,填表時間,登記時間(原始),填表人,已刪除"].join(',') + '\n' + 
         data.map(n => {
             const days = calculateDuration(n.start_date, n.end_date);
             const status = getNoteStatus(n);
             const statusText = status === 'deleted' ? '已刪除' : status === 'completed' ? '已圓滿' : n.action_type;
             
-            return `${n.team_big},${n.team_small},${n.monastery},${n.real_name},${n.id_2},${n.dharma_name},${n.action_type},${statusText},${n.start_date},${n.start_time},${n.end_date},${n.end_time},${days},${n.need_help?'是':'否'},"${(n.memo||'').replace(/"/g,'""')}",${n.created_at},${n.sign_name},${n.is_deleted?'是':''}`;
+            return `${n.team_big},${n.team_small},${n.monastery},${n.real_name},${n.id_2},${n.dharma_name},${n.action_type},${statusText},${n.start_date},${n.start_time},${n.end_date},${n.end_time},${days},${n.need_help?'是':'否'},"${(n.memo||'').replace(/"/g,'""')}","${formatDateTime(n.created_at)}","${n.created_at}",${n.sign_name},${n.is_deleted?'是':''}`;
         }).join('\n');
     const link = document.createElement('a');
     link.href = URL.createObjectURL(new Blob([csvContent], { type: 'text/csv;charset=utf-8;' }));
@@ -823,7 +817,6 @@ export default function RegistrationApp() {
             window.location.reload(); 
         } else { 
             alert('失敗');
-            // [新增] 當錯誤時清空表單
             setFormData({
                 team_big: '', team_small: '', monastery: '', 
                 real_name: getDisplayNameOnly(user.email || ''), 
@@ -870,7 +863,7 @@ export default function RegistrationApp() {
           if (activeTab === 'admin_settings') fetchOptions();
           if (activeTab === 'admin_requests') fetchResetRequests(); 
           if (activeTab === 'admin_data') fetchNotes();
-          if (activeTab === 'admin_history') fetchLoginHistory(); // 載入歷程
+          if (activeTab === 'admin_history') fetchLoginHistory(); 
       }
   }, [activeTab, isAdmin, fetchAllUsers, fetchOptions, fetchResetRequests, fetchNotes, fetchLoginHistory]);
 
@@ -887,7 +880,6 @@ export default function RegistrationApp() {
     init();
   }, [supabase, fetchNotes, fetchBulletins, fetchOptions, checkUserStatus]);
 
-  // [新增] 安全的 Date Change Handler
   const handleStartDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
     if (val && val < minStartDate) {
@@ -921,7 +913,6 @@ export default function RegistrationApp() {
       setFormData(prev => ({ ...prev, end_date: val }));
   };
 
-  // UI Components
   const openPwdModal = (target: any) => { setPwdTargetUser(target); setNewPassword(''); setShowPwdModal(true); };
 
   if (!useMock && (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)) {
@@ -949,7 +940,7 @@ export default function RegistrationApp() {
     <div className="min-h-screen bg-amber-50 flex flex-col items-center py-10 px-4 font-sans text-gray-900">
       <h1 className="text-3xl font-extrabold text-amber-900 mb-8 tracking-wide flex items-center gap-3">
         <Shield className="w-8 h-8 text-amber-600" />
-        書記預先登記系統 (v4.7)
+        書記預先登記系統 (v4.8)
       </h1>
 
       {!user ? (
@@ -1035,7 +1026,7 @@ export default function RegistrationApp() {
                <>
                  <div className="w-px bg-amber-300 mx-1 hidden md:block"></div>
                  {renderTab('admin_data', '資料', FileText)}
-                 {renderTab('admin_history', '歷程', Activity)} {/* [新增] 獨立歷程頁籤 */}
+                 {renderTab('admin_history', '歷程', Activity)}
                  {renderTab('admin_users', '用戶', Users)}
                  {renderTab('admin_requests', '審核', Shield, resetRequests.some(r=>r.status==='pending'))}
                  {renderTab('admin_settings', '設定', Settings)}
@@ -1138,8 +1129,23 @@ export default function RegistrationApp() {
                       onChange={e=>setFormData({...formData, end_time:e.target.value})} 
                     />
                   </div></div>
-                  <div className="md:col-span-4 bg-gray-50 p-3 rounded-lg"><label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" className="w-5 h-5 text-amber-600 rounded focus:ring-amber-500" checked={formData.need_help} onChange={e=>setFormData({...formData, need_help:e.target.checked})} /> <span className="font-bold text-gray-700">9. 需協助報名 (是)</span></label></div>
-                  <div className="md:col-span-4"><textarea className="w-full border border-gray-300 p-3 rounded-lg focus:ring-2 focus:ring-amber-500 outline-none" placeholder="10. 備註 (選填)" value={formData.memo} onChange={e=>setFormData({...formData, memo:e.target.value})}></textarea></div>
+
+                  {/* [修改] 增加說明文字 */}
+                  <div className="md:col-span-4 bg-gray-50 p-3 rounded-lg">
+                    <label className="flex flex-col sm:flex-row sm:items-center gap-2 cursor-pointer">
+                        <div className="flex items-center gap-2">
+                            <input type="checkbox" className="w-5 h-5 text-amber-600 rounded focus:ring-amber-500" checked={formData.need_help} onChange={e=>setFormData({...formData, need_help:e.target.checked})} /> 
+                            <span className="font-bold text-gray-700 whitespace-nowrap">9. 需協助報名 (是)</span>
+                        </div>
+                        <span className="text-sm text-gray-500">（若在普台學校及中台週邊的居士，需師父協助報名，請勾選。）</span>
+                    </label>
+                  </div>
+
+                  {/* [修改] 增加說明文字 */}
+                  <div className="md:col-span-4">
+                      <textarea className="w-full border border-gray-300 p-3 rounded-lg focus:ring-2 focus:ring-amber-500 outline-none" placeholder="10. 備註 (選填)" value={formData.memo} onChange={e=>setFormData({...formData, memo:e.target.value})}></textarea>
+                      <p className="text-sm text-gray-500 mt-1 ml-1">（任何想對師父說的話皆可填於此）</p>
+                  </div>
                </div>
                <button onClick={handleSubmit} className="w-full bg-amber-600 hover:bg-amber-700 text-white py-4 rounded-xl mt-8 font-bold text-lg shadow-lg hover:shadow-xl transition-all flex items-center justify-center gap-2">
                  <Check className="w-6 h-6" /> 送出報名
@@ -1226,7 +1232,6 @@ export default function RegistrationApp() {
               </div>
            )}
 
-           {/* [新增] 獨立的「系統歷程」頁籤 */}
            {activeTab === 'admin_history' && isAdmin && (
               <div className="bg-white p-6 rounded-2xl shadow-sm overflow-hidden">
                  <div className="flex justify-between items-center mb-6">
@@ -1314,6 +1319,8 @@ export default function RegistrationApp() {
                           <th className="p-3">發心起日/時</th>
                           <th className="p-3">發心迄日/時</th>
                           <th className="p-3">發心日數</th>
+                          {/* [新增] 填表時間欄位 */}
+                          <th className="p-3">填表時間</th>
                           <th className="p-3 rounded-r-lg">填表人</th>
                         </tr>
                       </thead>
@@ -1355,6 +1362,11 @@ export default function RegistrationApp() {
                               </span>
                             </td>
 
+                            {/* [新增] 填表時間顯示 */}
+                            <td className="p-3 text-xs text-gray-500">
+                                {formatDateTime(n.created_at)}
+                            </td>
+
                             <td className="p-3 text-blue-500 font-mono text-xs">{n.sign_name}</td>
                           </tr>
                         )})}
@@ -1386,6 +1398,7 @@ export default function RegistrationApp() {
                        </thead>
                        <tbody className="divide-y divide-gray-100">
                            {resetRequests.map(r => (
+                               // [修改] 根據 is_finish 欄位判斷是否反灰 (處理完畢)
                                <tr key={r.id} className={`transition-colors ${r.is_finish ? 'bg-gray-100 opacity-50 select-none' : 'hover:bg-gray-50'}`}>
                                    <td className="p-3 font-bold text-gray-800">{r.user_name}</td>
                                    <td className="p-3 font-mono text-gray-500">{r.id_last4}</td>
@@ -1396,6 +1409,7 @@ export default function RegistrationApp() {
                                          r.status==='completed' ? 'bg-green-100 text-green-700 border-green-200' : 
                                          'bg-red-100 text-red-700 border-red-200'
                                        }`}>
+                                           {/* [修改] 狀態文字對應 */}
                                            {r.status === 'pending' ? '待審核' : r.status === 'completed' ? '已完成' : '已駁回'}
                                        </span>
                                    </td>
@@ -1410,6 +1424,7 @@ export default function RegistrationApp() {
                                                </button>
                                            </div>
                                        )}
+                                       {/* [新增] 完成/駁回後的靜態顯示 */}
                                        {r.status === 'completed' && <span className="text-green-600 font-bold text-xs flex items-center"><Check className="w-4 h-4 mr-1"/>已完成</span>}
                                        {r.status === 'rejected' && <span className="text-red-600 font-bold text-xs flex items-center"><X className="w-4 h-4 mr-1"/>已駁回</span>}
                                    </td>
