@@ -939,7 +939,7 @@ export default function RegistrationApp() {
     <div className="min-h-screen bg-amber-50 flex flex-col items-center py-10 px-4 font-sans text-gray-900">
       <h1 className="text-3xl font-extrabold text-amber-900 mb-8 tracking-wide flex items-center gap-3">
         <Shield className="w-8 h-8 text-amber-600" />
-        書記預先登記系統 (v5.0)
+        書記預先登記系統測試 (v5.0)
       </h1>
 
       {!user ? (
