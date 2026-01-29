@@ -38,6 +38,7 @@ import {
 // [步驟 1] 部署到 Vercel 時，請解除下方這一行的註解
 // import { createClient as _createSupabaseClient } from '@supabase/supabase-js';
 import { createClient as _createSupabaseClient } from '@supabase/supabase-js';
+
 // --- 設定控制開關 ---
 // [步驟 2] 部署時，請將 true 改為 false
 const useMock = false; 
@@ -51,7 +52,7 @@ let mockDb: any = {
       { id: 101, team_big: '文殊隊', team_small: '第3小隊', monastery: '高雄', real_name: '王小明', dharma_name: '法明', action_type: '新增', start_date: '2025-02-15', start_time: '09:00', end_date: '2025-02-15', end_time: '17:00', need_help: false, memo: '我是王小明的第一筆紀錄', id_2: '5566', sign_name: '王小明 (5566)', is_deleted: false, created_at: new Date('2025-01-15T10:00:00').toISOString(), user_id: 'user-2' },
       { id: 102, team_big: '地藏隊', team_small: '第1小隊', monastery: '花蓮', real_name: '王小明', dharma_name: '法明', action_type: '異動', start_date: '2023-03-01', start_time: '08:30', end_date: '2023-03-03', end_time: '16:00', need_help: true, memo: '已結束的行程', id_2: '5566', sign_name: '王小明 (5566)', is_deleted: false, created_at: new Date('2023-01-20T14:30:00').toISOString(), user_id: 'user-2' }
   ],
-  bulletins: [{ id: 1, content: '🎉 歡迎使用書記預先登記系統 (v5.0)！\n紀錄卡片已加入填表時間。', image_url: '', created_at: new Date().toISOString() }],
+  bulletins: [{ id: 1, content: '🎉 歡迎使用書記預先登記系統 (v5.0)！\n修正了深色模式下的顯示問題。', image_url: '', created_at: new Date().toISOString() }],
   user_permissions: [
       { id: 1, email: 'admin@example.com', uid: 'user-1', is_admin: true, is_disabled: false, user_name: 'admin', id_last4: '1111', created_at: new Date().toISOString() },
       { id: 2, email: 'user@example.com', uid: 'user-2', is_admin: false, is_disabled: false, user_name: '王小明', id_last4: '5566', created_at: new Date().toISOString() }
@@ -955,17 +956,17 @@ export default function RegistrationApp() {
           <div className="space-y-4">
             <div className="relative">
               <User className="absolute left-3 top-3.5 w-5 h-5 text-gray-400" />
-              <input className="w-full pl-10 p-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-amber-500 outline-none" placeholder="姓名" value={username} onChange={e=>setUsername(e.target.value)} />
+              <input className="w-full pl-10 p-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-amber-500 outline-none bg-white text-gray-900" placeholder="姓名" value={username} onChange={e=>setUsername(e.target.value)} />
             </div>
             <div className="relative">
               <Shield className="absolute left-3 top-3.5 w-5 h-5 text-gray-400" />
-              <input className="w-full pl-10 p-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-amber-500 outline-none" placeholder="ID後四碼" maxLength={4} value={idLast4} onChange={e=>setIdLast4(e.target.value)} />
+              <input className="w-full pl-10 p-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-amber-500 outline-none bg-white text-gray-900" placeholder="ID後四碼" maxLength={4} value={idLast4} onChange={e=>setIdLast4(e.target.value)} />
             </div>
             
             {authMode !== 'forgot' && (
               <div className="relative">
                 <Key className="absolute left-3 top-3.5 w-5 h-5 text-gray-400" />
-                <input className="w-full pl-10 p-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-amber-500 outline-none" type="password" placeholder="密碼" value={password} onChange={e=>setPassword(e.target.value)} />
+                <input className="w-full pl-10 p-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-amber-500 outline-none bg-white text-gray-900" type="password" placeholder="密碼" value={password} onChange={e=>setPassword(e.target.value)} />
               </div>
             )}
           </div>
@@ -1037,9 +1038,9 @@ export default function RegistrationApp() {
                {isAdmin && (
                   <div className="bg-white p-6 rounded-2xl shadow-sm border border-orange-100 mb-6">
                     <h3 className="font-bold text-gray-700 mb-4 flex items-center gap-2"><Plus className="w-5 h-5" /> 發布新公告</h3>
-                    <textarea value={bulletinText} onChange={e => setBulletinText(e.target.value)} className="w-full border border-gray-200 p-4 rounded-xl mb-4 focus:ring-2 focus:ring-orange-200 outline-none" placeholder="輸入公告內容..."></textarea>
+                    <textarea value={bulletinText} onChange={e => setBulletinText(e.target.value)} className="w-full border border-gray-200 p-4 rounded-xl mb-4 focus:ring-2 focus:ring-orange-200 outline-none bg-white text-gray-900" placeholder="輸入公告內容..."></textarea>
                     <div className="flex justify-between items-center">
-                       <input type="file" ref={fileInputRef} onChange={handleImageUpload} className="text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-orange-50 file:text-orange-700 hover:file:bg-orange-100" />
+                       <input type="file" ref={fileInputRef} onChange={handleImageUpload} className="text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-orange-50 file:text-orange-700 hover:file:bg-orange-100 bg-white text-gray-900" />
                        <button onClick={handlePostBulletin} className="bg-orange-500 hover:bg-orange-600 text-white px-6 py-2 rounded-lg font-bold shadow-md transition-colors flex items-center gap-2">
                          發布
                        </button>
@@ -1072,7 +1073,7 @@ export default function RegistrationApp() {
                   <div className="flex flex-col gap-2">
                     <label className="text-sm font-bold text-gray-600">1. 大隊*</label>
                     <div className="relative">
-                      <select className="w-full border border-gray-300 p-2.5 rounded-lg appearance-none bg-white focus:ring-2 focus:ring-amber-500 outline-none" value={formData.team_big} onChange={e=>setFormData({...formData, team_big:e.target.value})}>
+                      <select className="w-full border border-gray-300 p-2.5 rounded-lg appearance-none bg-white focus:ring-2 focus:ring-amber-500 outline-none text-gray-900" value={formData.team_big} onChange={e=>setFormData({...formData, team_big:e.target.value})}>
                           <option value="">請選擇...</option>
                           {teamBigOptions.map(o=><option key={o.id} value={o.value}>{o.value}</option>)}
                       </select>
@@ -1081,19 +1082,19 @@ export default function RegistrationApp() {
                   </div>
                   <div className="flex flex-col gap-2"><label className="text-sm font-bold text-gray-600">2. 小隊*</label>
                   <div className="relative">
-                    <select className="w-full border border-gray-300 p-2.5 rounded-lg appearance-none bg-white focus:ring-2 focus:ring-amber-500 outline-none" value={formData.team_small} onChange={e=>setFormData({...formData, team_small:e.target.value})}>
+                    <select className="w-full border border-gray-300 p-2.5 rounded-lg appearance-none bg-white focus:ring-2 focus:ring-amber-500 outline-none text-gray-900" value={formData.team_small} onChange={e=>setFormData({...formData, team_small:e.target.value})}>
                         <option value="">請選擇...</option>
                         {teamSmallOptions.map(o=><option key={o.id} value={o.value}>{o.value}</option>)}
                     </select>
                     <ChevronRight className="w-4 h-4 absolute right-3 top-3 text-gray-400 rotate-90 pointer-events-none" />
                   </div>
                   </div>
-                  <div className="flex flex-col gap-2"><label className="text-sm font-bold text-gray-600">3. 精舍* (限2字)</label><input className="border border-gray-300 p-2.5 rounded-lg focus:ring-2 focus:ring-amber-500 outline-none" value={formData.monastery} onChange={e=>setFormData({...formData, monastery:e.target.value})} /></div>
-                  <div className="flex flex-col gap-2"><label className="text-sm font-bold text-gray-600">4. 姓名*</label><input className="border border-gray-300 p-2.5 rounded-lg focus:ring-2 focus:ring-amber-500 outline-none" value={formData.real_name} onChange={e=>setFormData({...formData, real_name:e.target.value})} /></div>
-                  <div className="flex flex-col gap-2"><label className="text-sm font-bold text-gray-600">5. 法名</label><input className="border border-gray-300 p-2.5 rounded-lg focus:ring-2 focus:ring-amber-500 outline-none" value={formData.dharma_name} onChange={e=>setFormData({...formData, dharma_name:e.target.value})} /></div>
+                  <div className="flex flex-col gap-2"><label className="text-sm font-bold text-gray-600">3. 精舍* (限2字)</label><input className="border border-gray-300 p-2.5 rounded-lg focus:ring-2 focus:ring-amber-500 outline-none bg-white text-gray-900" value={formData.monastery} onChange={e=>setFormData({...formData, monastery:e.target.value})} /></div>
+                  <div className="flex flex-col gap-2"><label className="text-sm font-bold text-gray-600">4. 姓名*</label><input className="border border-gray-300 p-2.5 rounded-lg focus:ring-2 focus:ring-amber-500 outline-none bg-white text-gray-900" value={formData.real_name} onChange={e=>setFormData({...formData, real_name:e.target.value})} /></div>
+                  <div className="flex flex-col gap-2"><label className="text-sm font-bold text-gray-600">5. 法名</label><input className="border border-gray-300 p-2.5 rounded-lg focus:ring-2 focus:ring-amber-500 outline-none bg-white text-gray-900" value={formData.dharma_name} onChange={e=>setFormData({...formData, dharma_name:e.target.value})} /></div>
                   <div className="flex flex-col gap-2"><label className="text-sm font-bold text-gray-600">6. 新增異動*</label>
                   <div className="relative">
-                    <select className="w-full border border-gray-300 p-2.5 rounded-lg appearance-none bg-white focus:ring-2 focus:ring-amber-500 outline-none" value={formData.action_type} onChange={e=>setFormData({...formData, action_type:e.target.value})}><option value="新增">新增</option><option value="異動">異動</option></select>
+                    <select className="w-full border border-gray-300 p-2.5 rounded-lg appearance-none bg-white focus:ring-2 focus:ring-amber-500 outline-none text-gray-900" value={formData.action_type} onChange={e=>setFormData({...formData, action_type:e.target.value})}><option value="新增">新增</option><option value="異動">異動</option></select>
                     <ChevronRight className="w-4 h-4 absolute right-3 top-3 text-gray-400 rotate-90 pointer-events-none" />
                   </div>
                   </div>
@@ -1101,13 +1102,13 @@ export default function RegistrationApp() {
                     <input 
                       type="date" 
                       min={minStartDate} 
-                      className="border border-gray-300 p-2.5 rounded-lg flex-1" 
+                      className="border border-gray-300 p-2.5 rounded-lg flex-1 bg-white text-gray-900" 
                       value={formData.start_date} 
                       onChange={handleStartDateChange} 
                     />
                     <input 
                       type="time" 
-                      className="border border-gray-300 p-2.5 rounded-lg flex-1" 
+                      className="border border-gray-300 p-2.5 rounded-lg flex-1 bg-white text-gray-900" 
                       value={formData.start_time} 
                       onChange={e=>setFormData({...formData, start_time:e.target.value})} 
                     />
@@ -1116,13 +1117,13 @@ export default function RegistrationApp() {
                     <input 
                       type="date" 
                       min={formData.start_date || minStartDate} 
-                      className="border border-gray-300 p-2.5 rounded-lg flex-1" 
+                      className="border border-gray-300 p-2.5 rounded-lg flex-1 bg-white text-gray-900" 
                       value={formData.end_date} 
                       onChange={handleEndDateChange} 
                     />
                     <input 
                       type="time" 
-                      className="border border-gray-300 p-2.5 rounded-lg flex-1" 
+                      className="border border-gray-300 p-2.5 rounded-lg flex-1 bg-white text-gray-900" 
                       value={formData.end_time} 
                       onChange={e=>setFormData({...formData, end_time:e.target.value})} 
                     />
@@ -1132,7 +1133,7 @@ export default function RegistrationApp() {
                   <div className="md:col-span-4 bg-gray-50 p-3 rounded-lg">
                     <label className="flex flex-col sm:flex-row sm:items-center gap-2 cursor-pointer">
                         <div className="flex items-center gap-2">
-                            <input type="checkbox" className="w-5 h-5 text-amber-600 rounded focus:ring-amber-500" checked={formData.need_help} onChange={e=>setFormData({...formData, need_help:e.target.checked})} /> 
+                            <input type="checkbox" className="w-5 h-5 text-amber-600 rounded focus:ring-amber-500 bg-white" checked={formData.need_help} onChange={e=>setFormData({...formData, need_help:e.target.checked})} /> 
                             <span className="font-bold text-gray-700 whitespace-nowrap">9. 需協助報名 (是)</span>
                         </div>
                         <span className="text-sm text-gray-500">（若在普台學校及中台週邊的居士，需師父協助報名，請勾選。）</span>
@@ -1141,7 +1142,7 @@ export default function RegistrationApp() {
 
                   {/* [修改] 增加說明文字 */}
                   <div className="md:col-span-4">
-                      <textarea className="w-full border border-gray-300 p-3 rounded-lg focus:ring-2 focus:ring-amber-500 outline-none" placeholder="10. 備註 (選填)" value={formData.memo} onChange={e=>setFormData({...formData, memo:e.target.value})}></textarea>
+                      <textarea className="w-full border border-gray-300 p-3 rounded-lg focus:ring-2 focus:ring-amber-500 outline-none bg-white text-gray-900" placeholder="10. 備註 (選填)" value={formData.memo} onChange={e=>setFormData({...formData, memo:e.target.value})}></textarea>
                       <p className="text-sm text-gray-500 mt-1 ml-1">（任何想對師父說的話皆可填於此）</p>
                   </div>
                </div>
@@ -1210,7 +1211,7 @@ export default function RegistrationApp() {
                       ))}
                     </ul>
                     <div className="flex gap-2">
-                      <input className="border p-2 rounded-lg flex-1 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="新增選項..." value={selectedCategory==='team_big'?newOptionValue:''} onChange={e=>{setNewOptionValue(e.target.value);setSelectedCategory('team_big')}} />
+                      <input className="border p-2 rounded-lg flex-1 focus:ring-2 focus:ring-blue-500 outline-none bg-white text-gray-900" placeholder="新增選項..." value={selectedCategory==='team_big'?newOptionValue:''} onChange={e=>{setNewOptionValue(e.target.value);setSelectedCategory('team_big')}} />
                       <button onClick={()=>handleAddOption('team_big')} className="bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700"><Plus className="w-5 h-5"/></button>
                     </div>
                  </div>
@@ -1225,7 +1226,7 @@ export default function RegistrationApp() {
                       ))}
                     </ul>
                     <div className="flex gap-2">
-                      <input className="border p-2 rounded-lg flex-1 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="新增選項..." value={selectedCategory==='team_small'?newOptionValue:''} onChange={e=>{setNewOptionValue(e.target.value);setSelectedCategory('team_small')}} />
+                      <input className="border p-2 rounded-lg flex-1 focus:ring-2 focus:ring-blue-500 outline-none bg-white text-gray-900" placeholder="新增選項..." value={selectedCategory==='team_small'?newOptionValue:''} onChange={e=>{setNewOptionValue(e.target.value);setSelectedCategory('team_small')}} />
                       <button onClick={()=>handleAddOption('team_small')} className="bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700"><Plus className="w-5 h-5"/></button>
                     </div>
                  </div>
@@ -1247,7 +1248,7 @@ export default function RegistrationApp() {
                                type="date" 
                                value={historyFilterDate}
                                onChange={(e) => setHistoryFilterDate(e.target.value)}
-                               className="bg-transparent text-sm text-gray-700 font-medium outline-none"
+                               className="bg-transparent text-sm text-gray-700 font-medium outline-none text-gray-900"
                            />
                        </div>
                        <button onClick={exportToExcel} className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-colors">
@@ -1441,9 +1442,9 @@ export default function RegistrationApp() {
                  <div className="mb-8 p-6 bg-gray-50 rounded-xl border border-gray-200">
                     <h4 className="font-bold text-gray-700 mb-4 flex items-center gap-2"><Plus className="w-5 h-5"/> 新增使用者 (自動產生UID)</h4>
                     <div className="flex flex-col md:flex-row gap-3">
-                       <input placeholder="姓名" className="border p-2.5 rounded-lg flex-1 outline-none focus:ring-2 focus:ring-blue-500" value={addUserName} onChange={e=>setAddUserName(e.target.value)} />
-                       <input placeholder="ID後4碼" className="border p-2.5 rounded-lg w-full md:w-32 outline-none focus:ring-2 focus:ring-blue-500" value={addUserLast4} onChange={e=>setAddUserLast4(e.target.value)} />
-                       <input placeholder="密碼" className="border p-2.5 rounded-lg w-full md:w-40 outline-none focus:ring-2 focus:ring-blue-500" value={addUserPwd} onChange={e=>setAddUserPwd(e.target.value)} />
+                       <input placeholder="姓名" className="border p-2.5 rounded-lg flex-1 outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900" value={addUserName} onChange={e=>setAddUserName(e.target.value)} />
+                       <input placeholder="ID後4碼" className="border p-2.5 rounded-lg w-full md:w-32 outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900" value={addUserLast4} onChange={e=>setAddUserLast4(e.target.value)} />
+                       <input placeholder="密碼" className="border p-2.5 rounded-lg w-full md:w-40 outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900" value={addUserPwd} onChange={e=>setAddUserPwd(e.target.value)} />
                        <button onClick={handleAdminAddUser} className="bg-blue-600 text-white px-6 py-2.5 rounded-lg font-bold hover:bg-blue-700 shadow-md">新增</button>
                     </div>
                  </div>
@@ -1470,7 +1471,7 @@ export default function RegistrationApp() {
                                   <label className="flex items-center cursor-pointer">
                                     <input 
                                         type="checkbox" 
-                                        className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                                        className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 bg-white"
                                         checked={u.is_admin || false} 
                                         onChange={() => handleToggleUserAdmin(u.email, u.is_admin)}
                                     />
@@ -1502,9 +1503,13 @@ export default function RegistrationApp() {
                       {pwdTargetUser === 'SELF' ? '修改我的密碼' : '重設使用者密碼'}
                    </h3>
                    
-                   <strong className="block text-center text-gray-800 mb-6 text-lg">{pwdTargetUser?.display_name}</strong>
+                   <p className="mb-6 text-sm text-gray-500 text-center">
+                      對象：<strong className="text-gray-800">{pwdTargetUser?.display_name}</strong>
+                      {pwdTargetUser !== 'SELF' && <br/>}
+                      {pwdTargetUser !== 'SELF' && <span className="text-xs text-red-500 block mt-1 bg-red-50 p-1 rounded">* 此操作將強制覆蓋現有密碼</span>}
+                   </p>
 
-                   <input type="password" placeholder="輸入新密碼 (至少6碼)" className="w-full border p-3 rounded-xl mb-6 focus:ring-2 focus:ring-blue-500 outline-none text-center tracking-widest" value={newPassword} onChange={e => setNewPassword(e.target.value)} />
+                   <input type="password" placeholder="輸入新密碼 (至少6碼)" className="w-full border p-3 rounded-xl mb-6 focus:ring-2 focus:ring-blue-500 outline-none text-center tracking-widest bg-white text-gray-900" value={newPassword} onChange={e => setNewPassword(e.target.value)} />
 
                    <div className="flex gap-3">
                        <button onClick={() => setShowPwdModal(false)} className="flex-1 py-3 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-xl font-bold transition-colors">取消</button>
